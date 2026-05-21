@@ -36,7 +36,6 @@
       overflow-x: hidden;
     }
 
-    /* 背景动效 */
     body::before {
       content: '';
       position: fixed;
@@ -169,25 +168,14 @@
       box-shadow: none;
     }
 
-    .btn-outline {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-primary);
-    }
-
-    .btn-outline:hover {
-      border-color: var(--primary);
-      background: rgba(99,102,241,0.1);
-    }
-
-    .btn-danger {
-      background: var(--danger);
-      color: #fff;
-    }
-
     .btn-success {
-      background: var(--success);
+      background: linear-gradient(135deg, var(--success), #059669);
       color: #fff;
+    }
+
+    .btn-success:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(16,185,129,0.3);
     }
 
     .btn-sm { padding: 8px 16px; font-size: 13px; }
@@ -197,7 +185,6 @@
       display: none;
     }
 
-    /* 顶部栏 */
     .interview-header {
       display: flex;
       align-items: center;
@@ -236,7 +223,6 @@
       50% { opacity: 0.3; }
     }
 
-    /* 主区域 */
     .interview-body {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -244,13 +230,11 @@
       margin-bottom: 20px;
     }
 
-    /* 面试官区域 */
     .interviewer-panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 16px;
       overflow: hidden;
-      position: relative;
     }
 
     .panel-header {
@@ -298,7 +282,6 @@
       color: var(--text-secondary);
     }
 
-    /* 语音波形动画 */
     .wave-animation {
       display: flex;
       align-items: center;
@@ -328,7 +311,6 @@
       50% { transform: scaleY(2.5); }
     }
 
-    /* 候选人摄像头区域 */
     .candidate-panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -366,7 +348,6 @@
       opacity: 0.5;
     }
 
-    /* 提问卡片 */
     .question-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -414,7 +395,7 @@
       font-size: 18px;
       line-height: 1.7;
       font-weight: 500;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .question-hint {
@@ -475,12 +456,12 @@
     }
 
     .btn-mic {
-      width: 48px; height: 48px;
+      width: 56px; height: 56px;
       border-radius: 50%;
       border: 2px solid var(--border);
       background: var(--bg-card);
       color: var(--text-primary);
-      font-size: 20px;
+      font-size: 24px;
       cursor: pointer;
       transition: all 0.3s;
       display: flex;
@@ -492,11 +473,22 @@
       border-color: var(--danger);
       background: rgba(239,68,68,0.15);
       color: var(--danger);
+      animation: mic-glow 1.5s infinite;
+    }
+
+    @keyframes mic-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50% { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
     }
 
     .btn-mic:hover {
       border-color: var(--primary);
       background: rgba(99,102,241,0.1);
+    }
+
+    .mic-hint {
+      font-size: 13px;
+      color: var(--text-muted);
     }
 
     /* 完成页 */
@@ -577,31 +569,31 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* 面试记录导出 */
+    /* 面试记录（实时转录，仅展示用） */
     .transcript-panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 20px;
       margin-top: 20px;
-      max-height: 300px;
+      max-height: 200px;
       overflow-y: auto;
     }
 
     .transcript-item {
       display: flex;
       gap: 12px;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--border);
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(51,65,85,0.5);
     }
 
     .transcript-item:last-child { border-bottom: none; }
 
     .transcript-role {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
-      min-width: 50px;
-      padding: 2px 8px;
+      min-width: 44px;
+      padding: 2px 6px;
       border-radius: 4px;
       text-align: center;
     }
@@ -618,7 +610,7 @@
 
     .transcript-content {
       flex: 1;
-      font-size: 14px;
+      font-size: 13px;
       line-height: 1.5;
       color: var(--text-secondary);
     }
@@ -630,6 +622,7 @@
       }
       .action-bar {
         flex-wrap: wrap;
+        justify-content: center;
       }
     }
   </style>
@@ -709,7 +702,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
               </svg>
-              <div>点击下方按钮开启摄像头</div>
+              <div>摄像头将自动开启</div>
             </div>
             <video id="cam-video" autoplay playsinline style="display:none"></video>
           </div>
@@ -723,12 +716,12 @@
           <div class="progress-dots" id="progress-dots"></div>
         </div>
         <div class="question-text" id="q-text">准备开始面试...</div>
-        <div class="question-hint" id="q-hint">请用语音回答，系统将自动记录您的回答</div>
+        <div class="question-hint" id="q-hint">点击麦克风按钮开始语音回答，回答完毕后点击"下一题"</div>
       </div>
 
       <!-- 语音识别区 -->
       <div class="speech-area" id="speech-area">
-        <div class="speech-placeholder" id="speech-placeholder">点击麦克风按钮开始语音回答...</div>
+        <div class="speech-placeholder" id="speech-placeholder">点击下方麦克风按钮开始语音回答...</div>
         <div class="speech-text" id="speech-text" style="display:none"></div>
         <div class="speech-listening" id="speech-listening" style="display:none">
           <div class="mic-pulse"></div>
@@ -739,25 +732,19 @@
       <!-- 操作栏 -->
       <div class="action-bar">
         <button class="btn-mic" id="btn-mic" onclick="toggleMic()" title="开始/停止录音">🎙️</button>
-        <button class="btn btn-outline btn-sm" id="btn-text" onclick="toggleTextInput()">键盘输入</button>
+        <span class="mic-hint" id="mic-hint">点击开始录音</span>
         <div style="flex:1"></div>
         <button class="btn btn-primary btn-sm" id="btn-next" onclick="nextQuestion()" style="display:none">
           下一题 →
         </button>
         <button class="btn btn-success btn-sm" id="btn-finish" onclick="finishInterview()" style="display:none">
-          完成面试
+          完成面试 ✓
         </button>
       </div>
 
-      <!-- 文字输入区 -->
-      <div id="text-input-area" style="display:none; margin-top:16px;">
-        <textarea id="manual-text" class="form-input" rows="3" placeholder="在此输入您的回答..."></textarea>
-        <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="submitManualText()">提交回答</button>
-      </div>
-
-      <!-- 面试记录 -->
+      <!-- 实时转录（仅展示） -->
       <div class="transcript-panel" id="transcript-panel" style="display:none">
-        <div style="font-weight:600; margin-bottom:12px;">📝 面试记录</div>
+        <div style="font-weight:600; margin-bottom:8px; font-size:13px">📝 面试过程记录</div>
         <div id="transcript-list"></div>
       </div>
     </div>
@@ -768,7 +755,6 @@
     <div class="complete-icon">✅</div>
     <div class="complete-title">面试已完成</div>
     <div class="complete-text" id="complete-text"></div>
-    <button class="btn btn-outline" style="margin-top:24px" onclick="exportTranscript()">📥 导出面试记录</button>
   </div>
 
   <!-- 错误页 -->
@@ -790,13 +776,11 @@
     let startTime = null;
     let isRecording = false;
     let mediaStream = null;
-    let mediaRecorder = null;
-    let recordedChunks = [];
     let recognition = null;
     let currentSpeechText = '';
     let cameraOn = false;
-    let isSpeaking = false;
     let speechSynth = window.speechSynthesis;
+    let hasAnswered = false; // 当前题是否已回答
 
     const urlParams = new URLSearchParams(window.location.search);
     const interviewLink = urlParams.get('link');
@@ -810,6 +794,7 @@
       if (error || !data) { showError('面试邀请不存在或已过期'); return; }
       if (data.status === 'cancelled') { showError('此面试邀请已被取消'); return; }
       if (data.expires_at && new Date(data.expires_at) < new Date()) { showError('面试邀请已过期'); return; }
+      if (!data.questions || data.questions.length === 0) { showError('该岗位尚未配置面试题目，请联系HR'); return; }
 
       interview = data;
       questions = data.questions || [];
@@ -838,12 +823,13 @@
       const phone = document.getElementById('inp-phone').value.trim();
       if (!name || !email) { alert('请填写姓名和邮箱'); return; }
 
+      // 创建候选人记录
       const { data, error } = await API.createCandidate(name, email, phone, interview.positions?.id, interviewLink);
       if (error) { alert('提交失败，请重试'); return; }
 
       candidateId = data[0].id;
 
-      // 更新邀请状态
+      // 更新邀请状态为进行中
       if (interview.id) {
         API.updateInviteStatus(interview.id, 'in_progress');
       }
@@ -876,37 +862,10 @@
         document.getElementById('cam-placeholder').style.display = 'none';
         document.getElementById('cam-label').textContent = '我的摄像头 · 已开启';
         cameraOn = true;
-
-        // 开始录制
-        startRecording();
+        document.getElementById('rec-dot').style.display = 'block';
       } catch (e) {
         console.warn('摄像头无法开启:', e);
         document.getElementById('cam-label').textContent = '摄像头未开启';
-      }
-    }
-
-    function startRecording() {
-      if (!mediaStream) return;
-      try {
-        recordedChunks = [];
-        mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'video/webm;codecs=vp9' });
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
-        };
-        mediaRecorder.start(1000);
-        document.getElementById('rec-dot').style.display = 'block';
-      } catch (e) {
-        console.warn('录制启动失败:', e);
-        try {
-          mediaRecorder = new MediaRecorder(mediaStream);
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) recordedChunks.push(e.data);
-          };
-          mediaRecorder.start(1000);
-          document.getElementById('rec-dot').style.display = 'block';
-        } catch(e2) {
-          console.warn('录制完全失败:', e2);
-        }
       }
     }
 
@@ -939,8 +898,7 @@
 
       recognition.onerror = (e) => {
         console.warn('语音识别错误:', e.error);
-        if (e.error !== 'no-speech') {
-          // 自动重启
+        if (e.error !== 'no-speech' && e.error !== 'aborted') {
           if (isRecording) {
             try { recognition.start(); } catch(e) {}
           }
@@ -964,15 +922,18 @@
 
     function startMic() {
       if (!recognition) {
-        alert('您的浏览器不支持语音识别，请使用Chrome浏览器或使用键盘输入');
+        alert('您的浏览器不支持语音识别，请使用Chrome浏览器');
         return;
       }
       isRecording = true;
       currentSpeechText = '';
+      hasAnswered = false;
       document.getElementById('btn-mic').classList.add('recording');
       document.getElementById('btn-mic').textContent = '⏹️';
+      document.getElementById('mic-hint').textContent = '正在录音，再次点击停止';
       document.getElementById('speech-placeholder').style.display = 'none';
       document.getElementById('speech-text').style.display = 'block';
+      document.getElementById('speech-text').innerHTML = '';
       document.getElementById('speech-listening').style.display = 'flex';
       try { recognition.start(); } catch(e) {}
     }
@@ -981,29 +942,15 @@
       isRecording = false;
       document.getElementById('btn-mic').classList.remove('recording');
       document.getElementById('btn-mic').textContent = '🎙️';
+      document.getElementById('mic-hint').textContent = '点击重新录音';
       document.getElementById('speech-listening').style.display = 'none';
       try { recognition.stop(); } catch(e) {}
 
       // 保存当前回答
       if (currentSpeechText.trim()) {
+        hasAnswered = true;
         saveCurrentAnswer(currentSpeechText.trim());
       }
-    }
-
-    function toggleTextInput() {
-      const area = document.getElementById('text-input-area');
-      area.style.display = area.style.display === 'none' ? 'block' : 'none';
-    }
-
-    function submitManualText() {
-      const text = document.getElementById('manual-text').value.trim();
-      if (!text) return;
-      currentSpeechText += text;
-      document.getElementById('speech-text').style.display = 'block';
-      document.getElementById('speech-text').innerHTML += text;
-      document.getElementById('speech-placeholder').style.display = 'none';
-      saveCurrentAnswer(currentSpeechText.trim());
-      document.getElementById('manual-text').value = '';
     }
 
     function saveCurrentAnswer(text) {
@@ -1034,28 +981,23 @@
       if (!speechSynth) return;
       speechSynth.cancel();
 
-      // 显示波形
       document.getElementById('wave-anim').style.display = 'flex';
-      isSpeaking = true;
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'zh-CN';
       utterance.rate = 0.9;
       utterance.pitch = 1.0;
 
-      // 选择中文语音
       const voices = speechSynth.getVoices();
       const zhVoice = voices.find(v => v.lang.startsWith('zh'));
       if (zhVoice) utterance.voice = zhVoice;
 
       utterance.onend = () => {
         document.getElementById('wave-anim').style.display = 'none';
-        isSpeaking = false;
       };
 
       utterance.onerror = () => {
         document.getElementById('wave-anim').style.display = 'none';
-        isSpeaking = false;
       };
 
       speechSynth.speak(utterance);
@@ -1074,19 +1016,21 @@
 
       const q = questions[currentQIdx];
       currentSpeechText = '';
+      hasAnswered = false;
       document.getElementById('speech-text').innerHTML = '';
       document.getElementById('speech-text').style.display = 'none';
       document.getElementById('speech-placeholder').style.display = 'block';
       document.getElementById('speech-listening').style.display = 'none';
       document.getElementById('btn-next').style.display = 'none';
       document.getElementById('btn-finish').style.display = 'none';
-      document.getElementById('text-input-area').style.display = 'none';
-      document.getElementById('manual-text').value = '';
+      document.getElementById('mic-hint').textContent = '点击开始录音';
+      document.getElementById('btn-mic').textContent = '🎙️';
+      document.getElementById('btn-mic').classList.remove('recording');
 
       // 更新进度
       document.getElementById('q-progress-text').textContent = `问题 ${currentQIdx + 1} / ${questions.length}`;
       document.getElementById('q-text').textContent = q.question;
-      document.getElementById('q-hint').textContent = q.answer_template ? `提示：${q.answer_template}` : '请用语音回答，系统将自动记录';
+      document.getElementById('q-hint').textContent = q.answer_template ? `提示：${q.answer_template}` : '点击麦克风按钮开始语音回答，回答完毕后点击"下一题"';
 
       // 进度点
       const dotsHtml = questions.map((_, i) => {
@@ -1097,12 +1041,14 @@
       }).join('');
       document.getElementById('progress-dots').innerHTML = dotsHtml;
 
-      // 如果已有答案
+      // 如果已有答案（回看）
       if (answers[q.id]) {
         currentSpeechText = answers[q.id];
+        hasAnswered = true;
         document.getElementById('speech-text').style.display = 'block';
         document.getElementById('speech-text').textContent = answers[q.id];
         document.getElementById('speech-placeholder').style.display = 'none';
+        document.getElementById('mic-hint').textContent = '已回答，点击重新录音或点下一题';
         if (currentQIdx < questions.length - 1) {
           document.getElementById('btn-next').style.display = 'inline-flex';
         } else {
@@ -1128,6 +1074,10 @@
 
     function nextQuestion() {
       if (isRecording) stopMic();
+      // 如果说了话但还没停止录音自动保存，这里也保存
+      if (!hasAnswered && currentSpeechText.trim()) {
+        saveCurrentAnswer(currentSpeechText.trim());
+      }
       currentQIdx++;
       renderQuestion();
     }
@@ -1144,7 +1094,6 @@
             ${t.role === 'interviewer' ? '面试官' : '我'}
           </span>
           <div class="transcript-content">${t.content}</div>
-          <span style="color:var(--text-muted);font-size:12px;white-space:nowrap">${t.time}</span>
         </div>
       `).join('');
       list.scrollTop = list.scrollHeight;
@@ -1165,9 +1114,14 @@
       if (speechSynth) speechSynth.cancel();
       clearInterval(timerInterval);
 
+      // 如果最后一题说了话但没保存
+      if (!hasAnswered && currentSpeechText.trim()) {
+        saveCurrentAnswer(currentSpeechText.trim());
+      }
+
       const durationSeconds = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
 
-      // 保存答案到数据库
+      // 保存所有答案到数据库
       for (const q of questions) {
         if (answers[q.id]) {
           await API.submitAnswer(candidateId, q.id, answers[q.id]);
@@ -1187,20 +1141,17 @@
         status: 'completed'
       });
 
-      // 更新邀请状态
+      // 更新邀请状态为已完成
       if (interview.id) {
         API.updateInviteStatus(interview.id, 'completed');
       }
 
-      // 停止录制和摄像头
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-      }
+      // 停止摄像头
       if (mediaStream) {
         mediaStream.getTracks().forEach(t => t.stop());
       }
 
-      // 显示完成页
+      // 显示完成页（感谢页，无导出按钮）
       hideAll();
       document.getElementById('complete-page').style.display = 'flex';
       const m = Math.floor(durationSeconds / 60);
@@ -1210,43 +1161,6 @@
         面试时长：${m}分${s}秒 · 共回答 ${Object.keys(answers).length} 题<br><br>
         我们会尽快与您联系，请保持电话/邮箱畅通。
       `;
-    }
-
-    // ========== 导出记录 ==========
-    function exportTranscript() {
-      let content = `面试记录导出\n`;
-      content += `================\n`;
-      content += `岗位: ${interview.positions?.name || ''}\n`;
-      content += `日期: ${new Date().toLocaleDateString('zh-CN')}\n`;
-      if (startTime) {
-        const d = Math.floor((Date.now() - startTime) / 1000);
-        content += `时长: ${Math.floor(d/60)}分${d%60}秒\n`;
-      }
-      content += `\n================\n\n`;
-
-      transcript.forEach(t => {
-        content += `[${t.time}] ${t.role === 'interviewer' ? '面试官' : '候选人'}:\n${t.content}\n\n`;
-      });
-
-      // 下载视频（如果有录制）
-      if (recordedChunks.length > 0) {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `面试视频_${interview.positions?.name || ''}_${new Date().toLocaleDateString('zh-CN')}.webm`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      // 下载文字记录
-      const textBlob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const textUrl = URL.createObjectURL(textBlob);
-      const ta = document.createElement('a');
-      ta.href = textUrl;
-      ta.download = `面试记录_${interview.positions?.name || ''}_${new Date().toLocaleDateString('zh-CN')}.txt`;
-      ta.click();
-      URL.revokeObjectURL(textUrl);
     }
 
     // ========== 加载语音 ==========

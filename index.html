@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>招聘面试管理系统</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="js/supabase-config.js"></script>
   <link rel="stylesheet" href="css/admin.css">
 </head>
@@ -22,32 +23,89 @@
     </div>
   </nav>
   <div class="main">
+    <!-- 首页 -->
     <div class="page active" id="page-dashboard">
       <div class="stats-grid" id="stats-grid"></div>
       <div class="card"><div class="card-header"><span class="card-title">📋 最近面试邀请</span></div><div class="card-body"><table class="dt" id="recent-invites"></table></div></div>
       <div class="card"><div class="card-header"><span class="card-title">👥 最近候选人</span></div><div class="card-body"><table class="dt" id="recent-candidates"></table></div></div>
     </div>
+
+    <!-- 招聘类别 -->
     <div class="page" id="page-categories">
       <div class="card"><div class="card-header"><span class="card-title">📂 招聘类别管理</span><button class="btn btn-p btn-sm" onclick="showCategoryModal()">+ 新增类别</button></div><div class="card-body"><table class="dt" id="categories-table"><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>岗位数</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
     </div>
+
+    <!-- 岗位管理 -->
     <div class="page" id="page-positions">
-      <div class="card"><div class="card-header"><span class="card-title">💼 岗位管理</span><button class="btn btn-p btn-sm" onclick="showPositionModal()">+ 新增岗位</button></div><div class="card-body"><div class="tabs" id="position-tabs"></div><table class="dt" id="positions-table"><thead><tr><th>序列</th><th>岗位名称</th><th>题库</th><th>评分维度</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">💼 岗位管理</span><button class="btn btn-p btn-sm" onclick="showPositionModal()">+ 新增岗位</button></div>
+        <div class="card-body">
+          <div class="tabs" id="position-tabs"></div>
+          <table class="dt" id="positions-table"><thead><tr><th>序列</th><th>岗位名称</th><th>配题</th><th>评分维度</th><th>操作</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <!-- 岗位配题面板（内联展示） -->
+      <div class="card" id="position-questions-panel" style="display:none">
+        <div class="card-header">
+          <span class="card-title">📝 <span id="pq-position-name"></span> - 配题管理</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-p btn-sm" onclick="showAddQuestionToPositionModal()">从题库选题</button>
+            <button class="btn btn-o btn-sm" onclick="closePositionQuestions()">收起</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <table class="dt" id="pq-table"><thead><tr><th>序号</th><th>题目内容</th><th>类型</th><th>答案模板</th><th>操作</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
     </div>
+
+    <!-- 题库管理 -->
     <div class="page" id="page-questions">
-      <div class="card"><div class="card-header"><span class="card-title">📝 题库管理</span><div style="display:flex;gap:8px;align-items:center"><select id="question-position" class="fi" style="width:200px" onchange="loadQuestions()"></select><button class="btn btn-o btn-sm" onclick="showImportModal()">📥 批量导入</button><button class="btn btn-p btn-sm" onclick="showQuestionModal()">+ 新增题目</button></div></div><div class="card-body"><table class="dt" id="questions-table"><thead><tr><th>ID</th><th>题目内容</th><th>类型</th><th>答案模板</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📝 题库管理（全局）</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-o btn-sm" onclick="downloadExcelTemplate()">📥 下载Excel模板</button>
+            <button class="btn btn-o btn-sm" onclick="showExcelImportModal()">📤 Excel批量导入</button>
+            <button class="btn btn-o btn-sm" onclick="showImportModal()">📝 文本批量导入</button>
+            <button class="btn btn-p btn-sm" onclick="showQuestionModal()">+ 新增题目</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="question-search" class="fi" style="width:200px" placeholder="搜索题目..." oninput="filterQuestions()">
+            <select id="question-type-filter" class="fi" style="width:120px" onchange="filterQuestions()">
+              <option value="">全部类型</option>
+              <option value="voice">语音回答</option>
+              <option value="text">文本回答</option>
+              <option value="choice">选择题</option>
+            </select>
+            <select id="question-position-filter" class="fi" style="width:180px" onchange="filterQuestions()">
+              <option value="">全部岗位</option>
+            </select>
+          </div>
+          <table class="dt" id="questions-table"><thead><tr><th>ID</th><th>题目内容</th><th>类型</th><th>分类</th><th>答案模板</th><th>关联岗位</th><th>操作</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
     </div>
+
+    <!-- 面试邀请 -->
     <div class="page" id="page-invites">
       <div class="card"><div class="card-header"><span class="card-title">✉️ 面试邀请</span><button class="btn btn-p btn-sm" onclick="showInviteModal()">+ 创建邀请</button></div><div class="card-body"><table class="dt" id="invites-table"><thead><tr><th>ID</th><th>候选人</th><th>岗位</th><th>面试链接</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
     </div>
+
+    <!-- 候选人管理 -->
     <div class="page" id="page-candidates">
-      <div class="card"><div class="card-header"><span class="card-title">👥 候选人管理</span></div><div class="card-body"><table class="dt" id="candidates-table"><thead><tr><th>ID</th><th>姓名</th><th>邮箱</th><th>电话</th><th>应聘岗位</th><th>时间</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
+      <div class="card"><div class="card-header"><span class="card-title">👥 候选人管理</span><button class="btn btn-o btn-sm" onclick="exportCandidatesCSV()">📥 导出候选人</button></div><div class="card-body"><table class="dt" id="candidates-table"><thead><tr><th>ID</th><th>姓名</th><th>邮箱</th><th>电话</th><th>应聘岗位</th><th>面试状态</th><th>时间</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
     </div>
+
+    <!-- 面试记录 -->
     <div class="page" id="page-records">
       <div class="card"><div class="card-header"><span class="card-title">🎬 面试记录</span><button class="btn btn-o btn-sm" onclick="exportAllRecords()">📥 导出全部</button></div><div class="card-body"><table class="dt" id="records-table"><thead><tr><th>ID</th><th>候选人</th><th>岗位</th><th>时长</th><th>题数</th><th>状态</th><th>时间</th><th>操作</th></tr></thead><tbody></tbody></table></div></div>
     </div>
   </div>
 
-  <!-- 模态框区域 -->
+  <!-- 类别模态框 -->
   <div class="mo" id="category-overlay" onclick="closeModal('category')"></div>
   <div class="mm" id="category-modal">
     <div class="mt" id="category-modal-title">新增类别</div>
@@ -57,6 +115,7 @@
     <div class="mf"><button class="btn btn-o" onclick="closeModal('category')">取消</button><button class="btn btn-p" onclick="saveCategory()">保存</button></div>
   </div>
 
+  <!-- 岗位模态框 -->
   <div class="mo" id="position-overlay" onclick="closeModal('position')"></div>
   <div class="mm" id="position-modal">
     <div class="mt" id="position-modal-title">新增岗位</div>
@@ -67,6 +126,7 @@
     <div class="mf"><button class="btn btn-o" onclick="closeModal('position')">取消</button><button class="btn btn-p" onclick="savePosition()">保存</button></div>
   </div>
 
+  <!-- 评分维度模态框 -->
   <div class="mo" id="dimension-overlay" onclick="closeModal('dimension')"></div>
   <div class="mm" id="dimension-modal" style="width:600px">
     <div class="mt"><span id="dimension-position-name"></span> - 评分维度</div>
@@ -81,45 +141,75 @@
     <div class="mf"><button class="btn btn-o" onclick="closeModal('dimension')">关闭</button></div>
   </div>
 
+  <!-- 题库新增/编辑模态框 -->
   <div class="mo" id="question-overlay" onclick="closeModal('question')"></div>
   <div class="mm" id="question-modal" style="width:600px">
     <div class="mt" id="question-modal-title">新增题目</div>
     <input type="hidden" id="question-id">
     <div class="fg"><label class="fl">题目内容</label><textarea id="question-content" class="fi" rows="3" placeholder="请输入面试题目"></textarea></div>
-    <div class="fg"><label class="fl">题目类型</label><select id="question-type" class="fi"><option value="text">文本回答</option><option value="voice">语音回答</option><option value="choice">选择题</option></select></div>
+    <div class="fg"><label class="fl">题目类型</label><select id="question-type" class="fi"><option value="voice">语音回答</option><option value="text">文本回答</option><option value="choice">选择题</option></select></div>
+    <div class="fg"><label class="fl">题目分类</label><input type="text" id="question-category" class="fi" placeholder="如：技术类、行为类、项目类（可选）"></div>
     <div class="fg"><label class="fl">答案模板/评分要点</label><textarea id="question-template" class="fi" rows="2" placeholder="填写参考回答或评分要点"></textarea></div>
     <div class="mf"><button class="btn btn-o" onclick="closeModal('question')">取消</button><button class="btn btn-p" onclick="saveQuestion()">保存</button></div>
   </div>
 
+  <!-- 从题库选题模态框 -->
+  <div class="mo" id="pickq-overlay" onclick="closeModal('pickq')"></div>
+  <div class="mm" id="pickq-modal" style="width:700px">
+    <div class="mt">从题库选择题目</div>
+    <div style="margin-bottom:12px"><input type="text" id="pickq-search" class="fi" placeholder="搜索题目..." oninput="filterPickQuestions()"></div>
+    <div id="pickq-list" style="max-height:400px;overflow-y:auto"></div>
+    <div class="mf"><button class="btn btn-o" onclick="closeModal('pickq')">取消</button><button class="btn btn-p" onclick="confirmAddQuestions()">确认添加</button></div>
+  </div>
+
+  <!-- 文本批量导入模态框 -->
+  <div class="mo" id="import-overlay" onclick="closeModal('import')"></div>
+  <div class="mm" id="import-modal" style="width:650px">
+    <div class="mt">📝 文本批量导入题库</div>
+    <div class="fg">
+      <label class="fl">题目列表（每行一题，格式：题目内容 | 类型(voice/text/choice) | 答案模板 | 分类）</label>
+      <textarea id="import-text" class="fi" rows="10" placeholder="示例：&#10;请介绍一下你的工作经历 | voice | 重点考察项目经验 | 行为类&#10;你最大的优势是什么 | voice | 考察自我认知 | 行为类&#10;请描述一个你解决过的技术难题 | voice | 考察问题解决能力 | 技术类"></textarea>
+    </div>
+    <div class="mf"><button class="btn btn-o" onclick="closeModal('import')">取消</button><button class="btn btn-p" onclick="doImport()">开始导入</button></div>
+  </div>
+
+  <!-- Excel批量导入模态框 -->
+  <div class="mo" id="excel-overlay" onclick="closeModal('excel')"></div>
+  <div class="mm" id="excel-modal" style="width:650px">
+    <div class="mt">📤 Excel批量导入题库</div>
+    <div class="fg">
+      <label class="fl">选择Excel文件（.xlsx）</label>
+      <input type="file" id="excel-file" accept=".xlsx,.xls" class="fi" onchange="parseExcelFile()">
+    </div>
+    <div id="excel-preview" style="display:none">
+      <div style="margin-bottom:8px;color:var(--t2);font-size:13px">预览（前5条）：</div>
+      <table class="dt" id="excel-preview-table"><thead><tr><th>题目内容</th><th>类型</th><th>答案模板</th><th>分类</th></tr></thead><tbody></tbody></table>
+      <div style="margin-top:8px;color:var(--t2);font-size:13px" id="excel-count"></div>
+    </div>
+    <div class="mf"><button class="btn btn-o" onclick="closeModal('excel')">取消</button><button class="btn btn-p" onclick="doExcelImport()">确认导入</button></div>
+  </div>
+
+  <!-- 邀请模态框 -->
   <div class="mo" id="invite-overlay" onclick="closeModal('invite')"></div>
   <div class="mm" id="invite-modal">
     <div class="mt">创建面试邀请</div>
     <div class="fg"><label class="fl">选择岗位</label><select id="invite-position" class="fi"></select></div>
-    <div class="fg"><label class="fl">候选人姓名（可选）</label><input type="text" id="invite-name" class="fi" placeholder="请输入候选人姓名"></div>
-    <div class="fg"><label class="fl">候选人邮箱（可选）</label><input type="email" id="invite-email" class="fi" placeholder="请输入候选人邮箱"></div>
+    <div class="fg"><label class="fl">候选人姓名 *</label><input type="text" id="invite-name" class="fi" placeholder="请输入候选人姓名"></div>
+    <div class="fg"><label class="fl">候选人邮箱 *</label><input type="email" id="invite-email" class="fi" placeholder="请输入候选人邮箱"></div>
     <div class="mf"><button class="btn btn-o" onclick="closeModal('invite')">取消</button><button class="btn btn-p" onclick="createInvite()">创建</button></div>
   </div>
 
+  <!-- 候选人详情模态框 -->
   <div class="mo" id="candidate-overlay" onclick="closeModal('candidate')"></div>
-  <div class="mm" id="candidate-modal" style="width:650px">
+  <div class="mm" id="candidate-modal" style="width:700px;max-height:90vh">
     <div class="mt">候选人详情 - <span id="candidate-name"></span></div>
     <div id="candidate-detail"></div>
     <div class="mf"><button class="btn btn-o" onclick="closeModal('candidate')">关闭</button></div>
   </div>
 
-  <div class="mo" id="import-overlay" onclick="closeModal('import')"></div>
-  <div class="mm" id="import-modal" style="width:650px">
-    <div class="mt">📥 批量导入题库</div>
-    <div class="fg"><label class="fl">目标岗位</label><select id="import-position" class="fi"></select></div>
-    <div class="fg">
-      <label class="fl">题目列表（每行一题，格式：题目内容 | 类型(text/voice) | 答案模板）</label>
-      <textarea id="import-text" class="fi" rows="10" placeholder="示例：&#10;请介绍一下你的工作经历 | text | 重点考察项目经验&#10;你最大的优势是什么 | voice | 考察自我认知&#10;请描述一个你解决过的技术难题 | voice | 考察问题解决能力"></textarea>
-    </div>
-    <div class="mf"><button class="btn btn-o" onclick="closeModal('import')">取消</button><button class="btn btn-p" onclick="doImport()">开始导入</button></div>
-  </div>
-
+  <!-- 面试记录详情模态框 -->
   <div class="mo" id="record-overlay" onclick="closeModal('record')"></div>
-  <div class="mm" id="record-modal" style="width:650px">
+  <div class="mm" id="record-modal" style="width:700px;max-height:90vh">
     <div class="mt">🎬 面试记录详情</div>
     <div id="record-detail"></div>
     <div class="mf"><button class="btn btn-o" onclick="closeModal('record')">关闭</button><button class="btn btn-p btn-sm" onclick="exportSingleRecord()">📥 导出记录</button></div>

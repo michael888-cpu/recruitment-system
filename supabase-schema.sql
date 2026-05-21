@@ -17,14 +17,25 @@ CREATE TABLE positions (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. 题库表
+-- 3. 题库表（全局题库，不绑定岗位）
 CREATE TABLE question_banks (
   id BIGSERIAL PRIMARY KEY,
-  position_id BIGINT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
   question TEXT NOT NULL,
-  question_type TEXT DEFAULT 'text',
+  question_type TEXT DEFAULT 'voice',
   answer_template TEXT,
+  category TEXT,
+  difficulty TEXT DEFAULT 'medium',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3.5 岗位-题目关联表
+CREATE TABLE position_questions (
+  id BIGSERIAL PRIMARY KEY,
+  position_id BIGINT NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+  question_id BIGINT NOT NULL REFERENCES question_banks(id) ON DELETE CASCADE,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(position_id, question_id)
 );
 
 -- 4. 评分维度表（岗位级别）
@@ -44,7 +55,7 @@ CREATE TABLE interview_invites (
   interview_link TEXT NOT NULL UNIQUE,
   candidate_name TEXT,
   candidate_email TEXT,
-  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'cancelled')),
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
   invited_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   expires_at TIMESTAMP WITH TIME ZONE
 );
@@ -84,7 +95,7 @@ CREATE TABLE interview_records (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 启用RLS策略
+ALTER TABLE position_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recruitment_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE question_banks ENABLE ROW LEVEL SECURITY;
@@ -103,3 +114,4 @@ CREATE POLICY "Allow all" ON interview_invites FOR ALL USING (true);
 CREATE POLICY "Allow all" ON candidates FOR ALL USING (true);
 CREATE POLICY "Allow all" ON interview_answers FOR ALL USING (true);
 CREATE POLICY "Allow all" ON interview_records FOR ALL USING (true);
+CREATE POLICY "Allow all" ON position_questions FOR ALL USING (true);

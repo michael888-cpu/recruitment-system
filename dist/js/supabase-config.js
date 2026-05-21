@@ -78,20 +78,55 @@ const API = {
     return { error };
   },
 
-  // ========== 题库管理 ==========
-  async getQuestions(positionId) {
-    let query = supabaseClient
-      .from('question_banks')
-      .select('*, positions(name)')
-      .order('id');
-    if (positionId) query = query.eq('position_id', positionId);
-    const { data, error } = await query;
+  // ========== 岗位-题目关联 ==========
+  async getPositionQuestions(positionId) {
+    const { data, error } = await supabaseClient
+      .from('position_questions')
+      .select('*, question_banks(*)')
+      .eq('position_id', positionId)
+      .order('sort_order');
     return { data, error };
   },
-  async createQuestion(positionId, question, questionType, answerTemplate) {
+  async addQuestionToPosition(positionId, questionId, sortOrder) {
+    const { data, error } = await supabaseClient
+      .from('position_questions')
+      .insert([{ position_id: positionId, question_id: questionId, sort_order: sortOrder || 0 }])
+      .select();
+    return { data, error };
+  },
+  async removeQuestionFromPosition(positionId, questionId) {
+    const { error } = await supabaseClient
+      .from('position_questions')
+      .delete()
+      .eq('position_id', positionId)
+      .eq('question_id', questionId);
+    return { error };
+  },
+  async batchAddQuestionsToPosition(positionId, questionIds) {
+    const rows = questionIds.map((qid, idx) => ({
+      position_id: positionId,
+      question_id: qid,
+      sort_order: idx
+    }));
+    const { data, error } = await supabaseClient
+      .from('position_questions')
+      .insert(rows)
+      .select();
+    return { data, error };
+  },
+
+  // ========== 题库管理（全局题库，不绑定岗位） ==========
+  async getQuestions() {
     const { data, error } = await supabaseClient
       .from('question_banks')
-      .insert([{ position_id: positionId, question, question_type: questionType, answer_template: answerTemplate }])
+      .select('*, position_questions(positions(id, name))')
+      .order('id');
+    return { data, error };
+  },
+  async createQuestion(question, questionType, answerTemplate, category) {
+    const { data, error } = await supabaseClient
+      .from('question_banks')
+      .insert([{ question, question_type: questionType, answer_template: answerTemplate, category }])
       .select();
     return { data, error };
   },
@@ -102,10 +137,10 @@ const API = {
       .select();
     return { data, error };
   },
-  async updateQuestion(id, question, questionType, answerTemplate) {
+  async updateQuestion(id, question, questionType, answerTemplate, category) {
     const { error } = await supabaseClient
       .from('question_banks')
-      .update({ question, question_type: questionType, answer_template: answerTemplate })
+      .update({ question, question_type: questionType, answer_template: answerTemplate, category })
       .eq('id', id);
     return { error };
   },
@@ -149,13 +184,11 @@ const API = {
   },
 
   // ========== 面试邀请管理 ==========
-  async getInvites(positionId) {
-    let query = supabaseClient
+  async getInvites() {
+    const { data, error } = await supabaseClient
       .from('interview_invites')
       .select('*, positions(name, sequence)')
       .order('invited_at', { ascending: false });
-    if (positionId) query = query.eq('position_id', positionId);
-    const { data, error } = await query;
     return { data, error };
   },
   async createInvite(positionId, candidateName, candidateEmail) {
@@ -182,13 +215,11 @@ const API = {
   },
 
   // ========== 候选人管理 ==========
-  async getCandidates(positionId) {
-    let query = supabaseClient
+  async getCandidates() {
+    const { data, error } = await supabaseClient
       .from('candidates')
       .select('*, positions(name)')
       .order('created_at', { ascending: false });
-    if (positionId) query = query.eq('position_id', positionId);
-    const { data, error } = await query;
     return { data, error };
   },
   async getCandidate(id) {
@@ -253,13 +284,11 @@ const API = {
       .select();
     return { data, error };
   },
-  async getInterviewRecords(candidateId) {
-    let query = supabaseClient
+  async getInterviewRecords() {
+    const { data, error } = await supabaseClient
       .from('interview_records')
       .select('*, candidates(name, email), positions(name)')
       .order('created_at', { ascending: false });
-    if (candidateId) query = query.eq('candidate_id', candidateId);
-    const { data, error } = await query;
     return { data, error };
   },
 
@@ -272,11 +301,20 @@ const API = {
       .single();
     if (inviteErr) return { data: null, error: inviteErr };
 
-    const { data: questions, error: questionsErr } = await supabaseClient
-      .from('question_banks')
-      .select('id, question, question_type, answer_template')
-      .eq('position_id', invite.position_id);
-    if (questionsErr) return { data: null, error: questionsErr };
+    // 通过 position_questions 获取该岗位关联的题目
+    const { data: pqData, error: pqErr } = await supabaseClient
+      .from('position_questions')
+      .select('question_id, sort_order, question_banks(id, question, question_type, answer_template)')
+      .eq('position_id', invite.position_id)
+      .order('sort_order');
+    if (pqErr) return { data: null, error: pqErr };
+
+    const questions = pqData.map(pq => ({
+      id: pq.question_banks.id,
+      question: pq.question_banks.question,
+      question_type: pq.question_banks.question_type,
+      answer_template: pq.question_banks.answer_template
+    }));
 
     return { data: { ...invite, questions }, error: null };
   },

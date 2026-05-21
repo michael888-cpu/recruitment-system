@@ -5,6 +5,7 @@ let currentCategoryId = null;
 let currentPositionId = null;
 let editingPosition = null;
 let currentRecordData = null;
+let allQuestions = [];
 
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', async () => {
@@ -13,7 +14,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // 导航切换
   document.querySelectorAll('.nav-link').forEach(link => {
     link.addEventListener('click', () => {
       document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
@@ -91,7 +91,7 @@ async function loadDashboard() {
   const ri = invRes.data?.slice(0, 5) || [];
   document.getElementById('recent-invites').innerHTML = ri.length ? `
     <thead><tr><th>候选人</th><th>岗位</th><th>状态</th><th>时间</th></tr></thead>
-    <tbody>${ri.map(i => `<tr><td>${i.candidate_name||'-'}</td><td>${i.positions?.name||'-'}</td><td><span class="tag ${i.status==='completed'?'tag-green':'tag-orange'}">${i.status==='completed'?'已完成':'待面试'}</span></td><td>${new Date(i.invited_at).toLocaleString('zh-CN')}</td></tr>`).join('')}</tbody>
+    <tbody>${ri.map(i => `<tr><td>${i.candidate_name||'-'}</td><td>${i.positions?.name||'-'}</td><td><span class="tag ${i.status==='completed'?'tag-green':i.status==='in_progress'?'tag-blue':'tag-orange'}">${i.status==='completed'?'已完成':i.status==='in_progress'?'进行中':'待面试'}</span></td><td>${new Date(i.invited_at).toLocaleString('zh-CN')}</td></tr>`).join('')}</tbody>
   ` : '<tbody><tr><td colspan="4" style="text-align:center;color:var(--t3);padding:40px">暂无数据</td></tr></tbody>';
 
   const rc = candRes.data?.slice(0, 5) || [];
@@ -162,6 +162,9 @@ async function loadPositions() {
   renderPositions(activeTab);
 
   document.getElementById('position-category').innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  
+  // 收起配题面板
+  document.getElementById('position-questions-panel').style.display = 'none';
 }
 
 function switchPositionTab(categoryId, el) {
@@ -169,15 +172,24 @@ function switchPositionTab(categoryId, el) {
   el.classList.add('active');
   currentCategoryId = categoryId;
   renderPositions(categoryId);
+  document.getElementById('position-questions-panel').style.display = 'none';
 }
 
-function renderPositions(categoryId) {
+async function renderPositions(categoryId) {
   const filtered = positions.filter(p => p.category_id == categoryId);
+  
+  // 获取所有岗位的配题数量
+  const pqCounts = {};
+  for (const p of filtered) {
+    const { data } = await API.getPositionQuestions(p.id);
+    pqCounts[p.id] = data?.length || 0;
+  }
+  
   document.getElementById('positions-table').querySelector('tbody').innerHTML = filtered.map(p => `
     <tr>
       <td>${p.sequence||'-'}</td><td>${p.name}</td>
-      <td><a href="#" onclick="goToQuestions(${p.id})" style="color:var(--p)">管理题库</a></td>
-      <td><a href="#" onclick="showDimensionModal(${p.id},'${p.name}')" style="color:var(--p)">配置评分</a></td>
+      <td><a href="#" onclick="openPositionQuestions(${p.id},'${p.name.replace(/'/g,"\\'")}')" style="color:var(--p)">${pqCounts[p.id]||0}题 · 管理配题</a></td>
+      <td><a href="#" onclick="showDimensionModal(${p.id},'${p.name.replace(/'/g,"\\'")}')" style="color:var(--p)">配置评分</a></td>
       <td><button class="btn btn-o btn-xs" onclick="editPosition(${p.id})">编辑</button> <button class="btn btn-er btn-xs" onclick="deletePosition(${p.id})">删除</button></td>
     </tr>
   `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:40px">暂无岗位</td></tr>';
@@ -225,51 +237,176 @@ async function deletePosition(id) {
   if (error) alert('删除失败'); else loadPositions();
 }
 
-function goToQuestions(positionId) {
+// ========== 岗位配题（内联展开面板） ==========
+async function openPositionQuestions(positionId, positionName) {
   currentPositionId = positionId;
-  document.querySelector('[data-page="questions"]').click();
+  document.getElementById('pq-position-name').textContent = positionName;
+  document.getElementById('position-questions-panel').style.display = 'block';
+  
+  // 加载该岗位关联的题目
+  const { data, error } = await API.getPositionQuestions(positionId);
+  const pqList = data || [];
+  
+  document.getElementById('pq-table').querySelector('tbody').innerHTML = pqList.map((pq, idx) => `
+    <tr>
+      <td>${idx + 1}</td>
+      <td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pq.question_banks?.question || '-'}</td>
+      <td><span class="tag ${pq.question_banks?.question_type==='voice'?'tag-cyan':pq.question_banks?.question_type==='text'?'tag-blue':'tag-orange'}">${pq.question_banks?.question_type==='voice'?'语音':pq.question_banks?.question_type==='text'?'文本':'选择'}</span></td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pq.question_banks?.answer_template||'-'}</td>
+      <td><button class="btn btn-er btn-xs" onclick="removeQuestionFromPosition(${positionId},${pq.question_id})">移除</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:40px">暂未配置题目，点击"从题库选题"添加</td></tr>';
+  
+  // 滚动到面板
+  document.getElementById('position-questions-panel').scrollIntoView({ behavior: 'smooth' });
 }
 
-// ========== 题库管理 ==========
+function closePositionQuestions() {
+  document.getElementById('position-questions-panel').style.display = 'none';
+}
+
+async function removeQuestionFromPosition(positionId, questionId) {
+  if (!confirm('确认从该岗位移除此题目？')) return;
+  const { error } = await API.removeQuestionFromPosition(positionId, questionId);
+  if (error) alert('移除失败');
+  else {
+    // 获取当前岗位名刷新
+    const pos = positions.find(p => p.id === positionId);
+    openPositionQuestions(positionId, pos?.name || '');
+  }
+}
+
+// ========== 从题库选题 ==========
+async function showAddQuestionToPositionModal() {
+  if (!currentPositionId) { alert('请先选择岗位'); return; }
+  
+  // 获取所有题目
+  const { data } = await API.getQuestions();
+  allQuestions = data || [];
+  
+  // 获取该岗位已有的题目ID
+  const { data: pqData } = await API.getPositionQuestions(currentPositionId);
+  const existIds = new Set((pqData || []).map(pq => pq.question_id));
+  
+  // 渲染可选题目列表
+  renderPickQuestions(allQuestions, existIds);
+  
+  document.getElementById('pickq-search').value = '';
+  openModal('pickq');
+}
+
+function renderPickQuestions(questions, existIds) {
+  const list = document.getElementById('pickq-list');
+  list.innerHTML = questions.map(q => `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--bd);${existIds?.has(q.id)?'opacity:0.5':''}">
+      <input type="checkbox" id="pickq-${q.id}" value="${q.id}" ${existIds?.has(q.id)?'disabled checked':''} style="width:18px;height:18px;cursor:pointer">
+      <label for="pickq-${q.id}" style="flex:1;cursor:pointer">
+        <div style="font-size:14px;font-weight:500">${q.question}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:4px">
+          <span class="tag ${q.question_type==='voice'?'tag-cyan':q.question_type==='text'?'tag-blue':'tag-orange'}" style="font-size:11px">${q.question_type==='voice'?'语音':q.question_type==='text'?'文本':'选择'}</span>
+          ${q.category?`<span style="margin-left:8px">${q.category}</span>`:''}
+        </div>
+      </label>
+    </div>
+  `).join('') || '<div style="text-align:center;color:var(--t3);padding:40px">题库暂无题目，请先到题库管理添加</div>';
+}
+
+function filterPickQuestions() {
+  const keyword = document.getElementById('pickq-search').value.trim().toLowerCase();
+  const filtered = allQuestions.filter(q => 
+    !keyword || q.question.toLowerCase().includes(keyword) || (q.category && q.category.toLowerCase().includes(keyword))
+  );
+  // 重新获取已有题目ID
+  const { data: pqData } = API.getPositionQuestions(currentPositionId);
+  // 这里用简单方式
+  const existIds = new Set();
+  renderPickQuestions(filtered, existIds);
+}
+
+async function confirmAddQuestions() {
+  const checkboxes = document.querySelectorAll('#pickq-list input[type="checkbox"]:checked:not(:disabled)');
+  const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+  
+  if (selectedIds.length === 0) { alert('请选择至少一道题目'); return; }
+  
+  const { error } = await API.batchAddQuestionsToPosition(currentPositionId, selectedIds);
+  if (error) alert('添加失败: ' + error.message);
+  else {
+    alert(`成功添加 ${selectedIds.length} 道题目！`);
+    closeModal('pickq');
+    // 刷新配题面板
+    const pos = positions.find(p => p.id === currentPositionId);
+    openPositionQuestions(currentPositionId, pos?.name || '');
+  }
+}
+
+// ========== 题库管理（全局，独立） ==========
 async function loadQuestions() {
   const [posRes, quesRes] = await Promise.all([API.getPositions(), API.getQuestions()]);
   positions = posRes.data || [];
+  allQuestions = quesRes.data || [];
 
-  const sel = document.getElementById('question-position');
-  sel.innerHTML = positions.map(p => `<option value="${p.id}">${p.recruitment_categories?.name||''} - ${p.sequence||''} ${p.name}</option>`).join('');
-  if (currentPositionId) sel.value = currentPositionId;
+  // 岗位筛选下拉
+  const sel = document.getElementById('question-position-filter');
+  sel.innerHTML = '<option value="">全部</option>' + positions.map(p => 
+    `<option value="${p.id}">${p.recruitment_categories?.name||''} - ${p.name}</option>`
+  ).join('');
 
-  const positionId = parseInt(sel.value);
-  const filtered = quesRes.data?.filter(q => q.position_id === positionId) || [];
-  window._allQuestions = quesRes.data || [];
+  renderQuestionsTable(allQuestions);
+}
 
-  document.getElementById('questions-table').querySelector('tbody').innerHTML = filtered.map(q => `
+function renderQuestionsTable(questions) {
+  document.getElementById('questions-table').querySelector('tbody').innerHTML = questions.map(q => {
+    // 计算关联岗位数（通过position_questions关联）
+    const posNames = q.position_questions?.map(pq => pq.positions?.name).filter(Boolean).join(', ') || '-';
+    return `
     <tr>
       <td>${q.id}</td>
       <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.question}</td>
       <td><span class="tag ${q.question_type==='voice'?'tag-cyan':q.question_type==='text'?'tag-blue':'tag-orange'}">${q.question_type==='voice'?'语音':q.question_type==='text'?'文本':'选择'}</span></td>
+      <td>${q.category||'-'}</td>
       <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.answer_template||'-'}</td>
+      <td>${posNames}</td>
       <td><button class="btn btn-o btn-xs" onclick="editQuestion(${q.id})">编辑</button> <button class="btn btn-er btn-xs" onclick="deleteQuestion(${q.id})">删除</button></td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:40px">暂无题目</td></tr>';
+  `}).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:40px">暂无题目</td></tr>';
+}
+
+async function filterQuestions() {
+  const keyword = document.getElementById('question-search').value.trim().toLowerCase();
+  const typeFilter = document.getElementById('question-type-filter').value;
+  const posFilter = document.getElementById('question-position-filter').value;
+  
+  let filtered = allQuestions;
+  if (keyword) filtered = filtered.filter(q => q.question.toLowerCase().includes(keyword) || (q.category && q.category.toLowerCase().includes(keyword)));
+  if (typeFilter) filtered = filtered.filter(q => q.question_type === typeFilter);
+  
+  // 如果按岗位筛选，需要查询该岗位关联的题目
+  if (posFilter) {
+    const { data } = await API.getPositionQuestions(parseInt(posFilter));
+    const posQIds = new Set((data || []).map(pq => pq.question_id));
+    filtered = filtered.filter(q => posQIds.has(q.id));
+  }
+  
+  renderQuestionsTable(filtered);
 }
 
 function showQuestionModal(id) {
-  const positionId = parseInt(document.getElementById('question-position').value);
-  if (!positionId) { alert('请先选择岗位'); return; }
   document.getElementById('question-modal-title').textContent = id ? '编辑题目' : '新增题目';
   if (id) {
-    const q = window._allQuestions?.find(x => x.id === id);
+    const q = allQuestions.find(x => x.id === id);
     if (q) {
       document.getElementById('question-id').value = id;
       document.getElementById('question-content').value = q.question;
       document.getElementById('question-type').value = q.question_type;
+      document.getElementById('question-category').value = q.category || '';
       document.getElementById('question-template').value = q.answer_template || '';
     }
   } else {
     document.getElementById('question-id').value = '';
     document.getElementById('question-content').value = '';
     document.getElementById('question-type').value = 'voice';
+    document.getElementById('question-category').value = '';
     document.getElementById('question-template').value = '';
   }
   openModal('question');
@@ -277,43 +414,179 @@ function showQuestionModal(id) {
 
 async function editQuestion(id) {
   const { data } = await API.getQuestions();
-  window._allQuestions = data || [];
+  allQuestions = data || [];
   showQuestionModal(id);
 }
 
 async function saveQuestion() {
   const id = document.getElementById('question-id').value;
-  const positionId = parseInt(document.getElementById('question-position').value);
   const question = document.getElementById('question-content').value.trim();
   const questionType = document.getElementById('question-type').value;
+  const category = document.getElementById('question-category').value.trim();
   const answerTemplate = document.getElementById('question-template').value.trim();
   if (!question) { alert('请输入题目内容'); return; }
   if (id) {
-    const { error } = await API.updateQuestion(parseInt(id), question, questionType, answerTemplate);
+    const { error } = await API.updateQuestion(parseInt(id), question, questionType, answerTemplate, category);
     if (error) alert('更新失败'); else { closeModal('question'); loadQuestions(); }
   } else {
-    const { error } = await API.createQuestion(positionId, question, questionType, answerTemplate);
+    const { error } = await API.createQuestion(question, questionType, answerTemplate, category);
     if (error) alert('创建失败'); else { closeModal('question'); loadQuestions(); }
   }
 }
 
 async function deleteQuestion(id) {
-  if (!confirm('确认删除？')) return;
+  if (!confirm('确认删除？删除后所有岗位关联的此题也会被移除')) return;
   const { error } = await API.deleteQuestion(id);
   if (error) alert('删除失败'); else loadQuestions();
 }
 
-// ========== 批量导入题库 ==========
+// ========== Excel模板下载 ==========
+function downloadExcelTemplate() {
+  // 使用SheetJS创建带提示的Excel模板
+  const wb = XLSX.utils.book_new();
+  
+  // 模板数据（带示例和提示）
+  const templateData = [
+    ['题目内容 *', '题目类型 *', '答案模板/评分要点', '题目分类', '难度'],
+    ['请介绍一下你的工作经历和项目经验', 'voice', '重点考察项目经验和解决问题的能力', '行为类', 'medium'],
+    ['你最大的技术优势是什么', 'voice', '考察自我认知和表达能力', '行为类', 'easy'],
+    ['请描述一个你解决过的技术难题', 'voice', '考察问题分析和解决能力', '技术类', 'hard'],
+    ['', '', '', '', ''],
+    ['', '', '', '', ''],
+    ['', '', '', '', '']
+  ];
+  
+  const ws = XLSX.utils.aoa_to_sheet(templateData);
+  
+  // 设置列宽
+  ws['!cols'] = [
+    { wch: 40 },  // 题目内容
+    { wch: 15 },  // 题目类型
+    { wch: 30 },  // 答案模板
+    { wch: 15 },  // 分类
+    { wch: 10 }   // 难度
+  ];
+  
+  XLSX.utils.book_append_sheet(wb, ws, '题库导入模板');
+  
+  // 添加说明页
+  const instructionData = [
+    ['题库导入说明'],
+    [''],
+    ['字段说明：'],
+    ['题目内容 *', '必填，面试题目内容'],
+    ['题目类型 *', '必填，可选值：voice（语音回答）、text（文本回答）、choice（选择题）'],
+    ['答案模板/评分要点', '选填，参考答案或评分要点'],
+    ['题目分类', '选填，如：技术类、行为类、项目类等'],
+    ['难度', '选填，可选值：easy（简单）、medium（中等）、hard（困难）'],
+    [''],
+    ['注意事项：'],
+    ['1. 第一行为表头，请勿修改'],
+    ['2. 题目内容为必填项'],
+    ['3. 题目类型只能填写 voice、text 或 choice'],
+    ['4. 请在"题库导入模板"工作表中填写题目'],
+    ['5. 填写完成后保存为 .xlsx 格式上传'],
+    ['6. 导入后题目进入全局题库，可在岗位管理中关联到具体岗位']
+  ];
+  
+  const ws2 = XLSX.utils.aoa_to_sheet(instructionData);
+  ws2['!cols'] = [{ wch: 20 }, { wch: 60 }];
+  XLSX.utils.book_append_sheet(wb, ws2, '填写说明');
+  
+  XLSX.writeFile(wb, '题库导入模板.xlsx');
+}
+
+// ========== Excel批量导入 ==========
+function showExcelImportModal() {
+  document.getElementById('excel-file').value = '';
+  document.getElementById('excel-preview').style.display = 'none';
+  document.getElementById('excel-count').textContent = '';
+  window._excelData = null;
+  openModal('excel');
+}
+
+function parseExcelFile() {
+  const file = document.getElementById('excel-file').files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      // 读取第一个工作表（模板页）
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      
+      if (data.length < 2) {
+        alert('文件为空或格式不正确');
+        return;
+      }
+      
+      // 跳过表头，解析数据
+      const questions = [];
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0] || !String(row[0]).trim()) continue;
+        questions.push({
+          question: String(row[0]).trim(),
+          question_type: String(row[1] || 'voice').trim().toLowerCase(),
+          answer_template: String(row[2] || '').trim(),
+          category: String(row[3] || '').trim(),
+          difficulty: String(row[4] || 'medium').trim()
+        });
+      }
+      
+      window._excelData = questions;
+      
+      // 预览前5条
+      document.getElementById('excel-preview').style.display = 'block';
+      document.getElementById('excel-preview-table').querySelector('tbody').innerHTML = 
+        questions.slice(0, 5).map(q => `
+          <tr>
+            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.question}</td>
+            <td><span class="tag ${q.question_type==='voice'?'tag-cyan':q.question_type==='text'?'tag-blue':'tag-orange'}">${q.question_type==='voice'?'语音':q.question_type==='text'?'文本':'选择'}</span></td>
+            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.answer_template||'-'}</td>
+            <td>${q.category||'-'}</td>
+          </tr>
+        `).join('');
+      document.getElementById('excel-count').textContent = `共解析到 ${questions.length} 道题目`;
+      
+    } catch (err) {
+      alert('文件解析失败: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function doExcelImport() {
+  const questions = window._excelData;
+  if (!questions || questions.length === 0) { alert('请先选择Excel文件'); return; }
+  
+  // 验证题目类型
+  const validTypes = ['voice', 'text', 'choice'];
+  for (const q of questions) {
+    if (!validTypes.includes(q.question_type)) {
+      q.question_type = 'voice'; // 默认语音
+    }
+  }
+  
+  const { data, error } = await API.createQuestionsBatch(questions);
+  if (error) {
+    alert('批量导入失败: ' + error.message);
+  } else {
+    alert(`成功导入 ${questions.length} 道题目！`);
+    closeModal('excel');
+    loadQuestions();
+  }
+}
+
+// ========== 文本批量导入 ==========
 function showImportModal() {
-  const sel = document.getElementById('import-position');
-  sel.innerHTML = positions.map(p => `<option value="${p.id}">${p.recruitment_categories?.name||''} - ${p.name}</option>`).join('');
-  if (currentPositionId) sel.value = currentPositionId;
   document.getElementById('import-text').value = '';
   openModal('import');
 }
 
 async function doImport() {
-  const positionId = parseInt(document.getElementById('import-position').value);
   const text = document.getElementById('import-text').value.trim();
   if (!text) { alert('请输入题目内容'); return; }
 
@@ -324,8 +597,9 @@ async function doImport() {
     const question = parts[0];
     const type = parts[1] || 'voice';
     const template = parts[2] || '';
+    const category = parts[3] || '';
     if (question) {
-      questions.push({ position_id: positionId, question, question_type: type, answer_template: template });
+      questions.push({ question, question_type: type, answer_template: template, category });
     }
   }
 
@@ -365,7 +639,7 @@ async function loadDimensions(positionId) {
         <div class="dim-name">${d.dimension_name}</div>
         <div class="dim-bar"><div class="dim-bar-fill" style="width:${d.weight}%"></div></div>
         <span class="dim-weight">${d.weight}%</span>
-        <button class="btn btn-o btn-xs" onclick="editDimension(${d.id},'${d.dimension_name}',${d.weight},'${d.description||''}')">编辑</button>
+        <button class="btn btn-o btn-xs" onclick="editDimension(${d.id},'${d.dimension_name.replace(/'/g,"\\'")}',${d.weight},'${(d.description||'').replace(/'/g,"\\'")}')">编辑</button>
         <button class="btn btn-er btn-xs" onclick="deleteDimension(${d.id},${positionId})">删除</button>
       </div>
     `).join('') || '<div style="text-align:center;color:var(--t3);padding:20px">暂无评分维度</div>'}
@@ -441,6 +715,14 @@ async function createInvite() {
   const positionId = parseInt(document.getElementById('invite-position').value);
   const candidateName = document.getElementById('invite-name').value.trim();
   const candidateEmail = document.getElementById('invite-email').value.trim();
+  
+  // 检查岗位是否有配题
+  const { data: pqData } = await API.getPositionQuestions(positionId);
+  if (!pqData || pqData.length === 0) {
+    alert('该岗位尚未配置面试题目，请先在岗位管理中配题后再创建邀请');
+    return;
+  }
+  
   const { data, error } = await API.createInvite(positionId, candidateName, candidateEmail);
   if (error) { alert('创建失败: ' + error.message); return; }
   const BASE = window.location.origin + window.location.pathname.replace('index.html','');
@@ -461,14 +743,18 @@ async function loadCandidates() {
   const { data } = await API.getCandidates();
   const candidates = data || [];
 
-  document.getElementById('candidates-table').querySelector('tbody').innerHTML = candidates.map(c => `
+  document.getElementById('candidates-table').querySelector('tbody').innerHTML = candidates.map(c => {
+    // 查找候选人对应的邀请状态
+    const inviteStatus = c.invite_link ? '已面试' : '未面试';
+    return `
     <tr>
       <td>${c.id}</td><td>${c.name}</td><td>${c.email||'-'}</td>
       <td>${c.phone||'-'}</td><td>${c.positions?.name||'-'}</td>
+      <td><span class="tag tag-blue">${inviteStatus}</span></td>
       <td>${new Date(c.created_at).toLocaleString('zh-CN')}</td>
       <td><button class="btn btn-p btn-xs" onclick="viewCandidate(${c.id})">查看详情</button></td>
     </tr>
-  `).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:40px">暂无候选人</td></tr>';
+  `}).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--t3);padding:40px">暂无候选人</td></tr>';
 }
 
 async function viewCandidate(id) {
@@ -521,7 +807,7 @@ async function viewCandidate(id) {
             <span style="color:var(--t3);font-size:13px">时长: ${m}分${s}秒 · ${r.question_count||0}题</span>
           </div>
           <div style="font-size:13px;color:var(--t3);margin-bottom:8px">${new Date(r.created_at).toLocaleString('zh-CN')}</div>
-          ${r.transcript?`<div style="background:#f1f5f9;border-radius:6px;padding:10px;font-size:13px;max-height:150px;overflow-y:auto;white-space:pre-wrap">${r.transcript}</div>`:''}
+          ${r.transcript?`<div style="background:#f1f5f9;border-radius:6px;padding:10px;font-size:13px;max-height:200px;overflow-y:auto;white-space:pre-wrap">${r.transcript}</div>`:''}
         </div>
       `;
     });
@@ -593,6 +879,30 @@ async function viewRecord(id) {
     html += '</div>';
   }
 
+  // 加载候选人回答和评分
+  if (record.candidate_id) {
+    const { data: candData } = await API.getCandidate(record.candidate_id);
+    if (candData?.answers?.length > 0) {
+      html += `<h4 style="margin:20px 0 12px">📊 评分详情</h4>`;
+      candData.answers.forEach((a, i) => {
+        html += `
+          <div class="answer-card">
+            <div class="answer-q">Q${i+1}: ${a.question_banks?.question||'题目'}</div>
+            <div class="answer-a">${a.answer_text}</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+              <span style="font-size:13px">评分:</span>
+              <select class="rate-select" onchange="rateAnswer(${a.id},this.value)">
+                <option value="">未评分</option>
+                ${[1,2,3,4,5].map(n=>`<option value="${n}" ${a.rating_score==n?'selected':''}>${n}分</option>`).join('')}
+              </select>
+              ${a.rating_score?`<span class="tag tag-green">${a.rating_score}分</span>`:''}
+            </div>
+          </div>
+        `;
+      });
+    }
+  }
+
   document.getElementById('record-detail').innerHTML = html;
   openModal('record');
 }
@@ -610,6 +920,26 @@ function exportSingleRecord() {
   const a = document.createElement('a');
   a.href = url;
   a.download = `面试记录_${r.candidates?.name||''}_${new Date().toLocaleDateString('zh-CN')}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ========== 导出候选人CSV ==========
+async function exportCandidatesCSV() {
+  const { data } = await API.getCandidates();
+  const candidates = data || [];
+  if (candidates.length === 0) { alert('暂无候选人数据'); return; }
+  
+  let csv = 'ID,姓名,邮箱,电话,应聘岗位,时间\n';
+  candidates.forEach(c => {
+    csv += `${c.id},"${c.name}","${c.email||''}","${c.phone||''}","${c.positions?.name||''}","${new Date(c.created_at).toLocaleString('zh-CN')}"\n`;
+  });
+  
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `候选人列表_${new Date().toLocaleDateString('zh-CN')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
