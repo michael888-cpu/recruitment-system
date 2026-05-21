@@ -250,12 +250,11 @@ async function openPositionQuestions(positionId, positionName) {
   document.getElementById('pq-table').querySelector('tbody').innerHTML = pqList.map((pq, idx) => `
     <tr>
       <td>${idx + 1}</td>
-      <td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pq.question_banks?.question || '-'}</td>
-      <td><span class="tag ${pq.question_banks?.question_type==='voice'?'tag-cyan':pq.question_banks?.question_type==='text'?'tag-blue':'tag-orange'}">${pq.question_banks?.question_type==='voice'?'语音':pq.question_banks?.question_type==='text'?'文本':'选择'}</span></td>
-      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pq.question_banks?.answer_template||'-'}</td>
+      <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pq.question_banks?.question || '-'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pq.question_banks?.answer_template||'-'}</td>
       <td><button class="btn btn-er btn-xs" onclick="removeQuestionFromPosition(${positionId},${pq.question_id})">移除</button></td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:40px">暂未配置题目，点击"从题库选题"添加</td></tr>';
+  `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:40px">暂未配置题目，点击"从题库选题"添加</td></tr>';
   
   // 滚动到面板
   document.getElementById('position-questions-panel').scrollIntoView({ behavior: 'smooth' });
@@ -303,8 +302,8 @@ function renderPickQuestions(questions, existIds) {
       <label for="pickq-${q.id}" style="flex:1;cursor:pointer">
         <div style="font-size:14px;font-weight:500">${q.question}</div>
         <div style="font-size:12px;color:var(--t3);margin-top:4px">
-          <span class="tag ${q.question_type==='voice'?'tag-cyan':q.question_type==='text'?'tag-blue':'tag-orange'}" style="font-size:11px">${q.question_type==='voice'?'语音':q.question_type==='text'?'文本':'选择'}</span>
-          ${q.category?`<span style="margin-left:8px">${q.category}</span>`:''}
+          ${q.category?`<span>${q.category}</span>`:''}
+          ${q.answer_template?`<span style="margin-left:8px;color:var(--t3)">评分: ${q.answer_template.substring(0,30)}${q.answer_template.length>30?'...':''}</span>`:''}
         </div>
       </label>
     </div>
@@ -362,24 +361,21 @@ function renderQuestionsTable(questions) {
     return `
     <tr>
       <td>${q.id}</td>
-      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.question}</td>
-      <td><span class="tag ${q.question_type==='voice'?'tag-cyan':q.question_type==='text'?'tag-blue':'tag-orange'}">${q.question_type==='voice'?'语音':q.question_type==='text'?'文本':'选择'}</span></td>
+      <td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.question}</td>
       <td>${q.category||'-'}</td>
-      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.answer_template||'-'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.answer_template||'-'}</td>
       <td>${posNames}</td>
       <td><button class="btn btn-o btn-xs" onclick="editQuestion(${q.id})">编辑</button> <button class="btn btn-er btn-xs" onclick="deleteQuestion(${q.id})">删除</button></td>
     </tr>
-  `}).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:40px">暂无题目</td></tr>';
+  `}).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--t3);padding:40px">暂无题目</td></tr>';
 }
 
 async function filterQuestions() {
   const keyword = document.getElementById('question-search').value.trim().toLowerCase();
-  const typeFilter = document.getElementById('question-type-filter').value;
   const posFilter = document.getElementById('question-position-filter').value;
   
   let filtered = allQuestions;
   if (keyword) filtered = filtered.filter(q => q.question.toLowerCase().includes(keyword) || (q.category && q.category.toLowerCase().includes(keyword)));
-  if (typeFilter) filtered = filtered.filter(q => q.question_type === typeFilter);
   
   // 如果按岗位筛选，需要查询该岗位关联的题目
   if (posFilter) {
@@ -447,13 +443,13 @@ function downloadExcelTemplate() {
   
   // 模板数据（带示例和提示）
   const templateData = [
-    ['题目内容 *', '题目类型 *', '答案模板/评分要点', '题目分类', '难度'],
-    ['请介绍一下你的工作经历和项目经验', 'voice', '重点考察项目经验和解决问题的能力', '行为类', 'medium'],
-    ['你最大的技术优势是什么', 'voice', '考察自我认知和表达能力', '行为类', 'easy'],
-    ['请描述一个你解决过的技术难题', 'voice', '考察问题分析和解决能力', '技术类', 'hard'],
-    ['', '', '', '', ''],
-    ['', '', '', '', ''],
-    ['', '', '', '', '']
+    ['题目内容 *', '评分要点/参考答案', '题目分类', '难度'],
+    ['请介绍一下你的工作经历和项目经验', '重点考察项目经验和解决问题的能力', '行为类', 'medium'],
+    ['你最大的技术优势是什么', '考察自我认知和表达能力', '行为类', 'easy'],
+    ['请描述一个你解决过的技术难题', '考察问题分析和解决能力', '技术类', 'hard'],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', '', '', '']
   ];
   
   const ws = XLSX.utils.aoa_to_sheet(templateData);
@@ -461,8 +457,7 @@ function downloadExcelTemplate() {
   // 设置列宽
   ws['!cols'] = [
     { wch: 40 },  // 题目内容
-    { wch: 15 },  // 题目类型
-    { wch: 30 },  // 答案模板
+    { wch: 30 },  // 评分要点
     { wch: 15 },  // 分类
     { wch: 10 }   // 难度
   ];
@@ -474,16 +469,15 @@ function downloadExcelTemplate() {
     ['题库导入说明'],
     [''],
     ['字段说明：'],
-    ['题目内容 *', '必填，面试题目内容'],
-    ['题目类型 *', '必填，可选值：voice（语音回答）、text（文本回答）、choice（选择题）'],
-    ['答案模板/评分要点', '选填，参考答案或评分要点'],
+    ['题目内容 *', '必填，面试题目内容（所有题目均为视频面试语音回答）'],
+    ['评分要点/参考答案', '选填，HR评分时参考的要点'],
     ['题目分类', '选填，如：技术类、行为类、项目类等'],
     ['难度', '选填，可选值：easy（简单）、medium（中等）、hard（困难）'],
     [''],
     ['注意事项：'],
     ['1. 第一行为表头，请勿修改'],
     ['2. 题目内容为必填项'],
-    ['3. 题目类型只能填写 voice、text 或 choice'],
+    ['3. 所有题目均为视频面试模式，候选人通过语音回答'],
     ['4. 请在"题库导入模板"工作表中填写题目'],
     ['5. 填写完成后保存为 .xlsx 格式上传'],
     ['6. 导入后题目进入全局题库，可在岗位管理中关联到具体岗位']
@@ -529,10 +523,10 @@ function parseExcelFile() {
         if (!row[0] || !String(row[0]).trim()) continue;
         questions.push({
           question: String(row[0]).trim(),
-          question_type: String(row[1] || 'voice').trim().toLowerCase(),
-          answer_template: String(row[2] || '').trim(),
-          category: String(row[3] || '').trim(),
-          difficulty: String(row[4] || 'medium').trim()
+          question_type: 'voice',  // 统一为视频面试语音题
+          answer_template: String(row[1] || '').trim(),
+          category: String(row[2] || '').trim(),
+          difficulty: String(row[3] || 'medium').trim()
         });
       }
       
@@ -543,9 +537,8 @@ function parseExcelFile() {
       document.getElementById('excel-preview-table').querySelector('tbody').innerHTML = 
         questions.slice(0, 5).map(q => `
           <tr>
-            <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.question}</td>
-            <td><span class="tag ${q.question_type==='voice'?'tag-cyan':q.question_type==='text'?'tag-blue':'tag-orange'}">${q.question_type==='voice'?'语音':q.question_type==='text'?'文本':'选择'}</span></td>
-            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.answer_template||'-'}</td>
+            <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.question}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${q.answer_template||'-'}</td>
             <td>${q.category||'-'}</td>
           </tr>
         `).join('');
@@ -562,14 +555,7 @@ async function doExcelImport() {
   const questions = window._excelData;
   if (!questions || questions.length === 0) { alert('请先选择Excel文件'); return; }
   
-  // 验证题目类型
-  const validTypes = ['voice', 'text', 'choice'];
-  for (const q of questions) {
-    if (!validTypes.includes(q.question_type)) {
-      q.question_type = 'voice'; // 默认语音
-    }
-  }
-  
+  // 所有题目统一为voice类型
   const { data, error } = await API.createQuestionsBatch(questions);
   if (error) {
     alert('批量导入失败: ' + error.message);
@@ -595,11 +581,10 @@ async function doImport() {
   for (const line of lines) {
     const parts = line.split('|').map(s => s.trim());
     const question = parts[0];
-    const type = parts[1] || 'voice';
-    const template = parts[2] || '';
-    const category = parts[3] || '';
+    const template = parts[1] || '';
+    const category = parts[2] || '';
     if (question) {
-      questions.push({ question, question_type: type, answer_template: template, category });
+      questions.push({ question, question_type: 'voice', answer_template: template, category });
     }
   }
 

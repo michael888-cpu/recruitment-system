@@ -178,6 +178,12 @@
       box-shadow: 0 4px 20px rgba(16,185,129,0.3);
     }
 
+    .btn-lg {
+      padding: 14px 32px;
+      font-size: 17px;
+      border-radius: 12px;
+    }
+
     .btn-sm { padding: 8px 16px; font-size: 13px; }
 
     /* ========== 面试页面 ========== */
@@ -453,15 +459,16 @@
       display: flex;
       gap: 12px;
       align-items: center;
+      justify-content: center;
     }
 
     .btn-mic {
-      width: 56px; height: 56px;
+      width: 64px; height: 64px;
       border-radius: 50%;
       border: 2px solid var(--border);
       background: var(--bg-card);
       color: var(--text-primary);
-      font-size: 24px;
+      font-size: 28px;
       cursor: pointer;
       transition: all 0.3s;
       display: flex;
@@ -489,6 +496,52 @@
     .mic-hint {
       font-size: 13px;
       color: var(--text-muted);
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .action-buttons {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .btn-next {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: #fff;
+      padding: 14px 36px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: none;
+    }
+
+    .btn-next:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px var(--glow);
+    }
+
+    .btn-finish {
+      background: linear-gradient(135deg, var(--success), #059669);
+      color: #fff;
+      padding: 14px 36px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: none;
+    }
+
+    .btn-finish:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(16,185,129,0.3);
     }
 
     /* 完成页 */
@@ -615,6 +668,25 @@
       color: var(--text-secondary);
     }
 
+    /* 语音状态提示 */
+    .speech-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 14px;
+      color: var(--accent);
+      min-height: 24px;
+    }
+
+    .speech-status .recording-dot {
+      width: 10px; height: 10px;
+      background: var(--danger);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
     /* 响应式 */
     @media (max-width: 768px) {
       .interview-body {
@@ -716,28 +788,31 @@
           <div class="progress-dots" id="progress-dots"></div>
         </div>
         <div class="question-text" id="q-text">准备开始面试...</div>
-        <div class="question-hint" id="q-hint">点击麦克风按钮开始语音回答，回答完毕后点击"下一题"</div>
+        <div class="question-hint" id="q-hint">点击麦克风按钮开始语音回答</div>
       </div>
 
       <!-- 语音识别区 -->
       <div class="speech-area" id="speech-area">
-        <div class="speech-placeholder" id="speech-placeholder">点击下方麦克风按钮开始语音回答...</div>
+        <div class="speech-placeholder" id="speech-placeholder">点击下方麦克风按钮开始语音回答，系统将自动识别您说的内容</div>
         <div class="speech-text" id="speech-text" style="display:none"></div>
         <div class="speech-listening" id="speech-listening" style="display:none">
           <div class="mic-pulse"></div>
-          正在聆听...
+          正在聆听您的回答...
         </div>
       </div>
 
-      <!-- 操作栏 -->
+      <!-- 操作栏：麦克风 + 下一题/完成 -->
       <div class="action-bar">
         <button class="btn-mic" id="btn-mic" onclick="toggleMic()" title="开始/停止录音">🎙️</button>
-        <span class="mic-hint" id="mic-hint">点击开始录音</span>
-        <div style="flex:1"></div>
-        <button class="btn btn-primary btn-sm" id="btn-next" onclick="nextQuestion()" style="display:none">
+      </div>
+      <div class="speech-status" id="speech-status"></div>
+
+      <!-- 下一题 / 完成面试 按钮 -->
+      <div class="action-buttons">
+        <button class="btn-next" id="btn-next" onclick="nextQuestion()">
           下一题 →
         </button>
-        <button class="btn btn-success btn-sm" id="btn-finish" onclick="finishInterview()" style="display:none">
+        <button class="btn-finish" id="btn-finish" onclick="finishInterview()">
           完成面试 ✓
         </button>
       </div>
@@ -750,7 +825,7 @@
     </div>
   </div>
 
-  <!-- 完成页 -->
+  <!-- 完成页（纯感谢，无下载按钮） -->
   <div class="complete-page" id="complete-page">
     <div class="complete-icon">✅</div>
     <div class="complete-title">面试已完成</div>
@@ -780,7 +855,8 @@
     let currentSpeechText = '';
     let cameraOn = false;
     let speechSynth = window.speechSynthesis;
-    let hasAnswered = false; // 当前题是否已回答
+    let hasAnswered = false;
+    let isFinishing = false;
 
     const urlParams = new URLSearchParams(window.location.search);
     const interviewLink = urlParams.get('link');
@@ -794,6 +870,7 @@
       if (error || !data) { showError('面试邀请不存在或已过期'); return; }
       if (data.status === 'cancelled') { showError('此面试邀请已被取消'); return; }
       if (data.expires_at && new Date(data.expires_at) < new Date()) { showError('面试邀请已过期'); return; }
+      if (data.status === 'completed') { showError('此面试已完成，无需重复参加'); return; }
       if (!data.questions || data.questions.length === 0) { showError('该岗位尚未配置面试题目，请联系HR'); return; }
 
       interview = data;
@@ -869,11 +946,11 @@
       }
     }
 
-    // ========== 语音识别 ==========
+    // ========== 语音识别（Web Speech API） ==========
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        console.warn('浏览器不支持语音识别');
+        console.warn('浏览器不支持语音识别，请使用Chrome');
         return;
       }
       recognition = new SpeechRecognition();
@@ -894,6 +971,10 @@
         if (final) currentSpeechText += final;
         const display = currentSpeechText + (interim ? `<span style="color:var(--text-muted)">${interim}</span>` : '');
         document.getElementById('speech-text').innerHTML = display || '';
+        // 说话时自动显示下一题/完成按钮
+        if (currentSpeechText.trim() && !hasAnswered) {
+          updateActionButtons();
+        }
       };
 
       recognition.onerror = (e) => {
@@ -930,11 +1011,13 @@
       hasAnswered = false;
       document.getElementById('btn-mic').classList.add('recording');
       document.getElementById('btn-mic').textContent = '⏹️';
-      document.getElementById('mic-hint').textContent = '正在录音，再次点击停止';
       document.getElementById('speech-placeholder').style.display = 'none';
       document.getElementById('speech-text').style.display = 'block';
       document.getElementById('speech-text').innerHTML = '';
       document.getElementById('speech-listening').style.display = 'flex';
+      document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 正在录音中，请对着麦克风说话...';
+      document.getElementById('btn-next').style.display = 'none';
+      document.getElementById('btn-finish').style.display = 'none';
       try { recognition.start(); } catch(e) {}
     }
 
@@ -942,7 +1025,6 @@
       isRecording = false;
       document.getElementById('btn-mic').classList.remove('recording');
       document.getElementById('btn-mic').textContent = '🎙️';
-      document.getElementById('mic-hint').textContent = '点击重新录音';
       document.getElementById('speech-listening').style.display = 'none';
       try { recognition.stop(); } catch(e) {}
 
@@ -950,6 +1032,23 @@
       if (currentSpeechText.trim()) {
         hasAnswered = true;
         saveCurrentAnswer(currentSpeechText.trim());
+        document.getElementById('speech-status').innerHTML = '✅ 已记录您的回答';
+      } else {
+        document.getElementById('speech-status').innerHTML = '未检测到语音内容，请重新点击麦克风回答';
+      }
+    }
+
+    function updateActionButtons() {
+      // 如果有回答内容，显示按钮
+      const hasContent = currentSpeechText.trim() || hasAnswered;
+      if (!hasContent) return;
+
+      if (currentQIdx < questions.length - 1) {
+        document.getElementById('btn-next').style.display = 'inline-flex';
+        document.getElementById('btn-finish').style.display = 'none';
+      } else {
+        document.getElementById('btn-next').style.display = 'none';
+        document.getElementById('btn-finish').style.display = 'inline-flex';
       }
     }
 
@@ -967,13 +1066,7 @@
       });
 
       renderTranscript();
-
-      // 显示下一题/完成按钮
-      if (currentQIdx < questions.length - 1) {
-        document.getElementById('btn-next').style.display = 'inline-flex';
-      } else {
-        document.getElementById('btn-finish').style.display = 'inline-flex';
-      }
+      updateActionButtons();
     }
 
     // ========== TTS 面试官提问 ==========
@@ -1020,17 +1113,18 @@
       document.getElementById('speech-text').innerHTML = '';
       document.getElementById('speech-text').style.display = 'none';
       document.getElementById('speech-placeholder').style.display = 'block';
+      document.getElementById('speech-placeholder').textContent = '点击麦克风按钮开始语音回答，系统将自动识别您说的内容';
       document.getElementById('speech-listening').style.display = 'none';
       document.getElementById('btn-next').style.display = 'none';
       document.getElementById('btn-finish').style.display = 'none';
-      document.getElementById('mic-hint').textContent = '点击开始录音';
       document.getElementById('btn-mic').textContent = '🎙️';
       document.getElementById('btn-mic').classList.remove('recording');
+      document.getElementById('speech-status').textContent = '';
 
       // 更新进度
       document.getElementById('q-progress-text').textContent = `问题 ${currentQIdx + 1} / ${questions.length}`;
       document.getElementById('q-text').textContent = q.question;
-      document.getElementById('q-hint').textContent = q.answer_template ? `提示：${q.answer_template}` : '点击麦克风按钮开始语音回答，回答完毕后点击"下一题"';
+      document.getElementById('q-hint').textContent = q.answer_template ? `参考要点：${q.answer_template}` : '请点击麦克风按钮，用语音回答以下问题';
 
       // 进度点
       const dotsHtml = questions.map((_, i) => {
@@ -1048,12 +1142,8 @@
         document.getElementById('speech-text').style.display = 'block';
         document.getElementById('speech-text').textContent = answers[q.id];
         document.getElementById('speech-placeholder').style.display = 'none';
-        document.getElementById('mic-hint').textContent = '已回答，点击重新录音或点下一题';
-        if (currentQIdx < questions.length - 1) {
-          document.getElementById('btn-next').style.display = 'inline-flex';
-        } else {
-          document.getElementById('btn-finish').style.display = 'inline-flex';
-        }
+        document.getElementById('speech-status').innerHTML = '✅ 已回答，可重新录音或直接下一题';
+        updateActionButtons();
       }
 
       // 面试官语音提问
@@ -1073,10 +1163,17 @@
     }
 
     function nextQuestion() {
+      if (isFinishing) return;
       if (isRecording) stopMic();
       // 如果说了话但还没停止录音自动保存，这里也保存
       if (!hasAnswered && currentSpeechText.trim()) {
         saveCurrentAnswer(currentSpeechText.trim());
+      }
+      // 检查是否有回答
+      const q = questions[currentQIdx];
+      if (!answers[q.id]) {
+        alert('请先回答当前问题再进入下一题');
+        return;
       }
       currentQIdx++;
       renderQuestion();
@@ -1110,6 +1207,9 @@
 
     // ========== 完成面试 ==========
     async function finishInterview() {
+      if (isFinishing) return;
+      isFinishing = true;
+
       if (isRecording) stopMic();
       if (speechSynth) speechSynth.cancel();
       clearInterval(timerInterval);
@@ -1119,7 +1219,19 @@
         saveCurrentAnswer(currentSpeechText.trim());
       }
 
+      // 检查最后一题是否已回答
+      const lastQ = questions[currentQIdx];
+      if (lastQ && !answers[lastQ.id]) {
+        if (!confirm('您还未回答当前问题，确定要结束面试吗？')) {
+          isFinishing = false;
+          return;
+        }
+      }
+
       const durationSeconds = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+
+      // 显示处理中状态
+      document.getElementById('speech-status').innerHTML = '⏳ 正在保存面试数据...';
 
       // 保存所有答案到数据库
       for (const q of questions) {
@@ -1151,7 +1263,7 @@
         mediaStream.getTracks().forEach(t => t.stop());
       }
 
-      // 显示完成页（感谢页，无导出按钮）
+      // 显示完成页（感谢页，无任何下载按钮）
       hideAll();
       document.getElementById('complete-page').style.display = 'flex';
       const m = Math.floor(durationSeconds / 60);
