@@ -1,11 +1,9 @@
 /**
  * Supabase 配置
- * 请替换为您项目的实际URL和anon key
  */
 const SUPABASE_URL = 'https://llsibvpgzowtchxylyjr.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxsc2lidnBnem93dGNoeHlseWpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNTA3NjgsImV4cCI6MjA5NDgyNjc2OH0.mUzlkC6KkDp4UX-vM926fO5ZrzS9kp1o-S6TX0VK5rA';
 
-// Supabase客户端
 let supabaseClient;
 
 function initSupabase() {
@@ -16,9 +14,8 @@ function initSupabase() {
   return false;
 }
 
-// API请求封装
 const API = {
-  // 大类管理
+  // ========== 大类管理 ==========
   async getCategories() {
     const { data, error } = await supabaseClient
       .from('recruitment_categories')
@@ -26,7 +23,6 @@ const API = {
       .order('id');
     return { data, error };
   },
-  
   async createCategory(name, type) {
     const { data, error } = await supabaseClient
       .from('recruitment_categories')
@@ -34,7 +30,6 @@ const API = {
       .select();
     return { data, error };
   },
-  
   async deleteCategory(id) {
     const { error } = await supabaseClient
       .from('recruitment_categories')
@@ -43,19 +38,16 @@ const API = {
     return { error };
   },
 
-  // 岗位管理
+  // ========== 岗位管理 ==========
   async getPositions(categoryId) {
     let query = supabaseClient
       .from('positions')
       .select('*, recruitment_categories(name)')
       .order('id');
-    if (categoryId) {
-      query = query.eq('category_id', categoryId);
-    }
+    if (categoryId) query = query.eq('category_id', categoryId);
     const { data, error } = await query;
     return { data, error };
   },
-  
   async getPosition(id) {
     const { data, error } = await supabaseClient
       .from('positions')
@@ -64,7 +56,6 @@ const API = {
       .single();
     return { data, error };
   },
-  
   async createPosition(categoryId, sequence, name) {
     const { data, error } = await supabaseClient
       .from('positions')
@@ -72,7 +63,6 @@ const API = {
       .select();
     return { data, error };
   },
-  
   async updatePosition(id, sequence, name) {
     const { error } = await supabaseClient
       .from('positions')
@@ -80,7 +70,6 @@ const API = {
       .eq('id', id);
     return { error };
   },
-  
   async deletePosition(id) {
     const { error } = await supabaseClient
       .from('positions')
@@ -89,19 +78,16 @@ const API = {
     return { error };
   },
 
-  // 题库管理
+  // ========== 题库管理 ==========
   async getQuestions(positionId) {
     let query = supabaseClient
       .from('question_banks')
       .select('*, positions(name)')
       .order('id');
-    if (positionId) {
-      query = query.eq('position_id', positionId);
-    }
+    if (positionId) query = query.eq('position_id', positionId);
     const { data, error } = await query;
     return { data, error };
   },
-  
   async createQuestion(positionId, question, questionType, answerTemplate) {
     const { data, error } = await supabaseClient
       .from('question_banks')
@@ -109,7 +95,13 @@ const API = {
       .select();
     return { data, error };
   },
-  
+  async createQuestionsBatch(questions) {
+    const { data, error } = await supabaseClient
+      .from('question_banks')
+      .insert(questions)
+      .select();
+    return { data, error };
+  },
   async updateQuestion(id, question, questionType, answerTemplate) {
     const { error } = await supabaseClient
       .from('question_banks')
@@ -117,7 +109,6 @@ const API = {
       .eq('id', id);
     return { error };
   },
-  
   async deleteQuestion(id) {
     const { error } = await supabaseClient
       .from('question_banks')
@@ -126,7 +117,7 @@ const API = {
     return { error };
   },
 
-  // 评分维度管理
+  // ========== 评分维度管理 ==========
   async getDimensions(positionId) {
     const { data, error } = await supabaseClient
       .from('rating_dimensions')
@@ -135,7 +126,6 @@ const API = {
       .order('id');
     return { data, error };
   },
-  
   async createDimension(positionId, dimensionName, weight, description) {
     const { data, error } = await supabaseClient
       .from('rating_dimensions')
@@ -143,7 +133,6 @@ const API = {
       .select();
     return { data, error };
   },
-  
   async updateDimension(id, dimensionName, weight, description) {
     const { error } = await supabaseClient
       .from('rating_dimensions')
@@ -151,7 +140,6 @@ const API = {
       .eq('id', id);
     return { error };
   },
-  
   async deleteDimension(id) {
     const { error } = await supabaseClient
       .from('rating_dimensions')
@@ -160,26 +148,23 @@ const API = {
     return { error };
   },
 
-  // 面试邀请管理
+  // ========== 面试邀请管理 ==========
   async getInvites(positionId) {
     let query = supabaseClient
       .from('interview_invites')
       .select('*, positions(name, sequence)')
       .order('invited_at', { ascending: false });
-    if (positionId) {
-      query = query.eq('position_id', positionId);
-    }
+    if (positionId) query = query.eq('position_id', positionId);
     const { data, error } = await query;
     return { data, error };
   },
-  
   async createInvite(positionId, candidateName, candidateEmail) {
     const interviewLink = generateUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabaseClient
       .from('interview_invites')
-      .insert([{ 
-        position_id: positionId, 
+      .insert([{
+        position_id: positionId,
         interview_link: interviewLink,
         candidate_name: candidateName,
         candidate_email: candidateEmail,
@@ -188,7 +173,6 @@ const API = {
       .select();
     return { data, error };
   },
-  
   async deleteInvite(id) {
     const { error } = await supabaseClient
       .from('interview_invites')
@@ -197,39 +181,39 @@ const API = {
     return { error };
   },
 
-  // 候选人管理
+  // ========== 候选人管理 ==========
   async getCandidates(positionId) {
     let query = supabaseClient
       .from('candidates')
       .select('*, positions(name)')
       .order('created_at', { ascending: false });
-    if (positionId) {
-      query = query.eq('position_id', positionId);
-    }
+    if (positionId) query = query.eq('position_id', positionId);
     const { data, error } = await query;
     return { data, error };
   },
-  
   async getCandidate(id) {
     const { data: candidate, error: candidateErr } = await supabaseClient
       .from('candidates')
       .select('*, positions(name)')
       .eq('id', id)
       .single();
-    
     if (candidateErr) return { data: null, error: candidateErr };
-    
+
     const { data: answers, error: answersErr } = await supabaseClient
       .from('interview_answers')
       .select('*, question_banks(question, answer_template)')
       .eq('candidate_id', id)
       .order('created_at');
-    
     if (answersErr) return { data: null, error: answersErr };
-    
-    return { data: { ...candidate, answers }, error: null };
+
+    const { data: records } = await supabaseClient
+      .from('interview_records')
+      .select('*')
+      .eq('candidate_id', id)
+      .order('created_at');
+
+    return { data: { ...candidate, answers, records: records || [] }, error: null };
   },
-  
   async createCandidate(name, email, phone, positionId, inviteLink) {
     const { data, error } = await supabaseClient
       .from('candidates')
@@ -238,7 +222,7 @@ const API = {
     return { data, error };
   },
 
-  // 面试回答
+  // ========== 面试回答 ==========
   async submitAnswer(candidateId, questionId, answerText) {
     const { data, error } = await supabaseClient
       .from('interview_answers')
@@ -246,7 +230,6 @@ const API = {
       .select();
     return { data, error };
   },
-  
   async rateAnswer(id, ratingScore, ratingComment) {
     const { error } = await supabaseClient
       .from('interview_answers')
@@ -255,28 +238,59 @@ const API = {
     return { error };
   },
 
-  // 候选人端 - 通过链接获取面试信息
+  // ========== 面试记录（视频面试） ==========
+  async saveInterviewRecord(candidateId, recordData) {
+    const { data, error } = await supabaseClient
+      .from('interview_records')
+      .insert([{
+        candidate_id: candidateId,
+        position_id: recordData.positionId,
+        transcript: recordData.transcript,
+        duration_seconds: recordData.durationSeconds,
+        question_count: recordData.questionCount,
+        status: recordData.status || 'completed'
+      }])
+      .select();
+    return { data, error };
+  },
+  async getInterviewRecords(candidateId) {
+    let query = supabaseClient
+      .from('interview_records')
+      .select('*, candidates(name, email), positions(name)')
+      .order('created_at', { ascending: false });
+    if (candidateId) query = query.eq('candidate_id', candidateId);
+    const { data, error } = await query;
+    return { data, error };
+  },
+
+  // ========== 候选人端 ==========
   async getInterviewByLink(link) {
     const { data: invite, error: inviteErr } = await supabaseClient
       .from('interview_invites')
       .select('*, positions(id, name)')
       .eq('interview_link', link)
       .single();
-    
     if (inviteErr) return { data: null, error: inviteErr };
-    
+
     const { data: questions, error: questionsErr } = await supabaseClient
       .from('question_banks')
-      .select('id, question, question_type')
+      .select('id, question, question_type, answer_template')
       .eq('position_id', invite.position_id);
-    
     if (questionsErr) return { data: null, error: questionsErr };
-    
+
     return { data: { ...invite, questions }, error: null };
+  },
+
+  // ========== 更新邀请状态 ==========
+  async updateInviteStatus(id, status) {
+    const { error } = await supabaseClient
+      .from('interview_invites')
+      .update({ status })
+      .eq('id', id);
+    return { error };
   }
 };
 
-// 生成UUID
 function generateUUID() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     const r = Math.random() * 16 | 0;
