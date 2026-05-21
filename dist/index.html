@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>招聘面试管理系统 - 管理后台</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-config.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    
+    /* 头部 */
+    .header { background: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header h1 { color: #1890ff; font-size: 20px; }
+    .nav { display: flex; gap: 8px; }
+    .nav a { padding: 8px 16px; border-radius: 4px; cursor: pointer; color: #666; text-decoration: none; }
+    .nav a:hover, .nav a.active { background: #1890ff; color: #fff; }
+    
+    /* 卡片 */
+    .card { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card-title { font-size: 16px; font-weight: 500; }
+    
+    /* 按钮 */
+    .btn { padding: 8px 16px; border-radius: 4px; border: none; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #1890ff; color: #fff; }
+    .btn-primary:hover { background: #40a9ff; }
+    .btn-danger { background: #ff4d4f; color: #fff; }
+    .btn-danger:hover { background: #ff7875; }
+    .btn-default { background: #f0f0f0; color: #666; }
+    .btn-default:hover { background: #d9d9d9; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
+    
+    /* 表格 */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+    th { background: #fafafa; font-weight: 500; color: #333; }
+    tr:hover { background: #f5f5f5; }
+    
+    /* 标签 */
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .tag-orange { background: #fff7e6; color: #fa8c16; }
+    .tag-green { background: #f6ffed; color: #52c41a; }
+    .tag-blue { background: #e6f7ff; color: #1890ff; }
+    
+    /* 模态框 */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; }
+    .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; border-radius: 8px; padding: 24px; width: 500px; max-width: 90%; max-height: 80vh; overflow-y: auto; z-index: 1001; }
+    .modal-header { font-size: 18px; font-weight: 500; margin-bottom: 16px; }
+    .modal-footer { margin-top: 24px; display: flex; gap: 8px; justify-content: flex-end; }
+    
+    /* 表单 */
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; margin-bottom: 8px; font-weight: 500; }
+    .form-input { width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+    .form-input:focus { border-color: #40a9ff; outline: none; }
+    select.form-input { cursor: pointer; }
+    
+    /* 统计卡片 */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .stat-card { background: #fff; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .stat-value { font-size: 32px; font-weight: bold; color: #1890ff; }
+    .stat-label { color: #666; margin-top: 8px; }
+    
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid #f0f0f0; margin-bottom: 16px; }
+    .tab { padding: 12px 24px; cursor: pointer; border-bottom: 2px solid transparent; color: #666; }
+    .tab:hover, .tab.active { color: #1890ff; border-bottom-color: #1890ff; }
+    
+    /* 列表项 */
+    .list-item { display: flex; align-items: center; padding: 12px; border-bottom: 1px solid #f0f0f0; }
+    .list-item:hover { background: #fafafa; }
+    
+    /* 复制按钮 */
+    .copy-group { display: flex; gap: 8px; align-items: center; }
+    .copy-input { flex: 1; padding: 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; }
+    .copy-btn { padding: 6px 12px; background: #1890ff; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    .copy-btn.copied { background: #52c41a; }
+    
+    /* 评分维度 */
+    .dimension-item { display: flex; align-items: center; gap: 16px; padding: 12px; background: #f9f9f9; border-radius: 4px; margin-bottom: 8px; }
+    .dimension-name { flex: 1; font-weight: 500; }
+    .dimension-weight { color: #1890ff; font-weight: bold; }
+    .progress-bar { flex: 1; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #1890ff; border-radius: 4px; }
+    
+    /* 加载状态 */
+    .loading { text-align: center; padding: 40px; color: #999; }
+    .empty { text-align: center; padding: 40px; color: #999; }
+    
+    /* 隐藏 */
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <!-- 头部 -->
+  <div class="header">
+    <h1>招聘面试管理系统</h1>
+    <div class="nav">
+      <a class="active" data-page="dashboard">首页</a>
+      <a data-page="categories">招聘类别</a>
+      <a data-page="positions">岗位管理</a>
+      <a data-page="questions">题库管理</a>
+      <a data-page="invites">面试邀请</a>
+      <a data-page="candidates">候选人</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- 首页 -->
+    <div id="page-dashboard">
+      <div class="stats" id="stats"></div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">最近面试邀请</span>
+        </div>
+        <table id="recent-invites"></table>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">最近候选人</span>
+        </div>
+        <table id="recent-candidates"></table>
+      </div>
+    </div>
+
+    <!-- 招聘类别 -->
+    <div id="page-categories" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">招聘类别管理</span>
+          <button class="btn btn-primary" onclick="showCategoryModal()">新增类别</button>
+        </div>
+        <table id="categories-table">
+          <thead><tr><th>ID</th><th>名称</th><th>类型</th><th>岗位数</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 岗位管理 -->
+    <div id="page-positions" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">岗位管理</span>
+          <button class="btn btn-primary" onclick="showPositionModal()">新增岗位</button>
+        </div>
+        <div class="tabs" id="position-tabs"></div>
+        <table id="positions-table">
+          <thead><tr><th>序列</th><th>岗位名称</th><th>题库</th><th>评分维度</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 题库管理 -->
+    <div id="page-questions" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">题库管理</span>
+          <div>
+            <select id="question-position" class="form-input" style="width: 200px; display: inline-block; margin-right: 8px;" onchange="loadQuestions()"></select>
+            <button class="btn btn-default" onclick="location.href='/positions'">返回</button>
+            <button class="btn btn-primary" onclick="showQuestionModal()">新增题目</button>
+          </div>
+        </div>
+        <table id="questions-table">
+          <thead><tr><th>ID</th><th>题目内容</th><th>类型</th><th>答案模板</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 面试邀请 -->
+    <div id="page-invites" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">面试邀请</span>
+          <button class="btn btn-primary" onclick="showInviteModal()">创建面试邀请</button>
+        </div>
+        <table id="invites-table">
+          <thead><tr><th>ID</th><th>候选人</th><th>岗位</th><th>面试链接</th><th>状态</th><th>邀请时间</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 候选人 -->
+    <div id="page-candidates" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">候选人管理</span>
+        </div>
+        <table id="candidates-table">
+          <thead><tr><th>ID</th><th>姓名</th><th>邮箱</th><th>电话</th><th>应聘岗位</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 候选人详情弹窗 -->
+    <div class="modal-overlay" id="candidate-modal-overlay" onclick="closeCandidateModal()"></div>
+    <div class="modal" id="candidate-modal">
+      <div class="modal-header">候选人详情 - <span id="candidate-name"></span></div>
+      <div id="candidate-detail"></div>
+      <div class="modal-footer">
+        <button class="btn btn-default" onclick="closeCandidateModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 类别弹窗 -->
+  <div class="modal-overlay" id="category-modal-overlay" onclick="closeCategoryModal()"></div>
+  <div class="modal" id="category-modal">
+    <div class="modal-header" id="category-modal-title">新增类别</div>
+    <input type="hidden" id="category-id">
+    <div class="form-group">
+      <label class="form-label">类别名称</label>
+      <input type="text" id="category-name" class="form-input" placeholder="如：社会招聘、校园招聘">
+    </div>
+    <div class="form-group">
+      <label class="form-label">类型</label>
+      <select id="category-type" class="form-input">
+        <option value="social">社会招聘</option>
+        <option value="campus">校园招聘</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeCategoryModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveCategory()">保存</button>
+    </div>
+  </div>
+
+  <!-- 岗位弹窗 -->
+  <div class="modal-overlay" id="position-modal-overlay" onclick="closePositionModal()"></div>
+  <div class="modal" id="position-modal">
+    <div class="modal-header" id="position-modal-title">新增岗位</div>
+    <input type="hidden" id="position-id">
+    <div class="form-group">
+      <label class="form-label">所属类别</label>
+      <select id="position-category" class="form-input"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">序列</label>
+      <input type="text" id="position-sequence" class="form-input" placeholder="如：A、B、C">
+    </div>
+    <div class="form-group">
+      <label class="form-label">岗位名称</label>
+      <input type="text" id="position-name" class="form-input" placeholder="请输入岗位名称">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closePositionModal()">取消</button>
+      <button class="btn btn-primary" onclick="savePosition()">保存</button>
+    </div>
+  </div>
+
+  <!-- 评分维度弹窗 -->
+  <div class="modal-overlay" id="dimension-modal-overlay" onclick="closeDimensionModal()"></div>
+  <div class="modal" id="dimension-modal" style="width: 600px;">
+    <div class="modal-header"><span id="dimension-position-name"></span> - 评分维度</div>
+    <div id="dimensions-list"></div>
+    <div style="margin-top: 16px; padding: 16px; background: #f5f5f5; border-radius: 4px;">
+      <h4 style="margin-bottom: 12px;">新增维度</h4>
+      <input type="hidden" id="dimension-position-id">
+      <input type="hidden" id="dimension-id">
+      <div class="form-group">
+        <input type="text" id="dimension-name" class="form-input" placeholder="维度名称，如：技术能力">
+      </div>
+      <div class="form-group">
+        <input type="number" id="dimension-weight" class="form-input" placeholder="权重 %（0-100）" min="0" max="100">
+      </div>
+      <div class="form-group">
+        <input type="text" id="dimension-desc" class="form-input" placeholder="评分说明（可选）">
+      </div>
+      <button class="btn btn-primary" onclick="saveDimension()">保存维度</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeDimensionModal()">关闭</button>
+    </div>
+  </div>
+
+  <!-- 题目弹窗 -->
+  <div class="modal-overlay" id="question-modal-overlay" onclick="closeQuestionModal()"></div>
+  <div class="modal" id="question-modal" style="width: 600px;">
+    <div class="modal-header" id="question-modal-title">新增题目</div>
+    <input type="hidden" id="question-id">
+    <div class="form-group">
+      <label class="form-label">题目内容</label>
+      <textarea id="question-content" class="form-input" rows="4" placeholder="请输入面试题目"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">题目类型</label>
+      <select id="question-type" class="form-input">
+        <option value="text">文本回答</option>
+        <option value="choice">选择题</option>
+        <option value="file">文件上传</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">答案模板/评分要点</label>
+      <textarea id="question-template" class="form-input" rows="3" placeholder="填写参考回答或评分要点"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeQuestionModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveQuestion()">保存</button>
+    </div>
+  </div>
+
+  <!-- 邀请弹窗 -->
+  <div class="modal-overlay" id="invite-modal-overlay" onclick="closeInviteModal()"></div>
+  <div class="modal" id="invite-modal">
+    <div class="modal-header">创建面试邀请</div>
+    <div class="form-group">
+      <label class="form-label">选择岗位</label>
+      <select id="invite-position" class="form-input"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">候选人姓名（可选）</label>
+      <input type="text" id="invite-name" class="form-input" placeholder="请输入候选人姓名">
+    </div>
+    <div class="form-group">
+      <label class="form-label">候选人邮箱（可选）</label>
+      <input type="email" id="invite-email" class="form-input" placeholder="请输入候选人邮箱">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeInviteModal()">取消</button>
+      <button class="btn btn-primary" onclick="createInvite()">创建</button>
+    </div>
+  </div>
+
+  <script>
+    // 全局变量
+    let categories = [];
+    let positions = [];
+    let currentCategoryId = null;
+    let currentPositionId = null;
+    let editingPosition = null;
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!initSupabase()) {
+        alert('Supabase加载失败，请刷新页面重试');
+        return;
+      }
+      
+      // 导航切换
+      document.querySelectorAll('.nav a').forEach(link => {
+        link.addEventListener('click', () => {
+          document.querySelectorAll('.nav a').forEach(l => l.classList.remove('active'));
+          link.classList.add('active');
+          document.querySelectorAll('[id^="page-"]').forEach(p => p.classList.add('hidden'));
+          document.getElementById('page-' + link.dataset.page).classList.remove('hidden');
+          
+          // 加载对应页面数据
+          switch(link.dataset.page) {
+            case 'dashboard': loadDashboard(); break;
+            case 'categories': loadCategories(); break;
+            case 'positions': loadPositions(); break;
+            case 'invites': loadInvites(); break;
+            case 'candidates': loadCandidates(); break;
+          }
+        });
+      });
+      
+      // 默认加载首页
+      loadDashboard();
+    });
+
+    // ==================== 首页 ====================
+    async function loadDashboard() {
+      const [catRes, posRes, invRes, candRes] = await Promise.all([
+        API.getCategories(),
+        API.getPositions(),
+        API.getInvites(),
+        API.getCandidates()
+      ]);
+      
+      const stats = {
+        categories: catRes.data?.length || 0,
+        positions: posRes.data?.length || 0,
+        invites: invRes.data?.length || 0,
+        candidates: candRes.data?.length || 0
+      };
+      
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-card"><div class="stat-value">${stats.categories}</div><div class="stat-label">招聘类别</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.positions}</div><div class="stat-label">招聘岗位</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.invites}</div><div class="stat-label">面试邀请</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.candidates}</div><div class="stat-label">候选人</div></div>
+      `;
+      
+      // 最近邀请
+      const recentInvites = invRes.data?.slice(0, 5) || [];
+      document.getElementById('recent-invites').innerHTML = recentInvites.length ? `
+        <thead><tr><th>候选人</th><th>岗位</th><th>状态</th><th>时间</th></tr></thead>
+        <tbody>${recentInvites.map(i => `
+          <tr>
+            <td>${i.candidate_name || '-'}</td>
+            <td>${i.positions?.name || '-'}</td>
+            <td><span class="tag ${i.status === 'completed' ? 'tag-green' : 'tag-orange'}">${i.status === 'completed' ? '已完成' : '待面试'}</span></td>
+            <td>${new Date(i.invited_at).toLocaleString('zh-CN')}</td>
+          </tr>
+        `).join('')}</tbody>
+      ` : '<tbody><tr><td colspan="4" class="empty">暂无数据</td></tr></tbody>';
+      
+      // 最近候选人
+      const recentCandidates = candRes.data?.slice(0, 5) || [];
+      document.getElementById('recent-candidates').innerHTML = recentCandidates.length ? `
+        <thead><tr><th>姓名</th><th>岗位</th><th>邮箱</th><th>时间</th></tr></thead>
+        <tbody>${recentCandidates.map(c => `
+          <tr>
+            <td>${c.name}</td>
+            <td>${c.positions?.name || '-'}</td>
+            <td>${c.email || '-'}</td>
+            <td>${new Date(c.created_at).toLocaleString('zh-CN')}</td>
+          </tr>
+        `).join('')}</tbody>
+      ` : '<tbody><tr><td colspan="4" class="empty">暂无数据</td></tr></tbody>';
+    }
+
+    // ==================== 类别管理 ====================
+    async function loadCategories() {
+      const { data, error } = await API.getCategories();
+      categories = data || [];
+      
+      document.getElementById('categories-table').querySelector('tbody').innerHTML = categories.map(c => `
+        <tr>
+          <td>${c.id}</td>
+          <td><a href="#" onclick="goToPositions(${c.id})" style="color: #1890ff;">${c.name}</a></td>
+          <td><span class="tag ${c.type === 'social' ? 'tag-blue' : 'tag-orange'}">${c.type === 'social' ? '社会招聘' : '校园招聘'}</span></td>
+          <td>${positions.filter(p => p.category_id === c.id).length}</td>
+          <td>
+            <button class="btn btn-default btn-sm" onclick="editCategory(${c.id})">编辑</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCategory(${c.id})">删除</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" class="empty">暂无数据</td></tr>';
+    }
+
+    function showCategoryModal(id) {
+      document.getElementById('category-modal-overlay').style.display = 'block';
+      document.getElementById('category-modal').style.display = 'block';
+      document.getElementById('category-modal-title').textContent = id ? '编辑类别' : '新增类别';
+      
+      if (id) {
+        const cat = categories.find(c => c.id === id);
+        document.getElementById('category-id').value = id;
+        document.getElementById('category-name').value = cat.name;
+        document.getElementById('category-type').value = cat.type;
+      } else {
+        document.getElementById('category-id').value = '';
+        document.getElementById('category-name').value = '';
+        document.getElementById('category-type').value = 'social';
+      }
+    }
+
+    function closeCategoryModal() {
+      document.getElementById('category-modal-overlay').style.display = 'none';
+      document.getElementById('category-modal').style.display = 'none';
+    }
+
+    async function saveCategory() {
+      const id = document.getElementById('category-id').value;
+      const name = document.getElementById('category-name').value.trim();
+      const type = document.getElementById('category-type').value;
+      
+      if (!name) { alert('请输入类别名称'); return; }
+      
+      if (id) {
+        // 更新暂不支持，通过删除+新建实现
+        alert('编辑功能请删除后重新创建');
+      } else {
+        const { error } = await API.createCategory(name, type);
+        if (error) alert('创建失败: ' + error.message);
+        else { closeCategoryModal(); loadCategories(); }
+      }
+    }
+
+    async function deleteCategory(id) {
+      if (!confirm('确认删除？')) return;
+      const { error } = await API.deleteCategory(id);
+      if (error) alert('删除失败: ' + error.message);
+      else loadCategories();
+    }
+
+    function goToPositions(categoryId) {
+      document.querySelector('[data-page="positions"]').click();
+      currentCategoryId = categoryId;
+    }
+
+    // ==================== 岗位管理 ====================
+    async function loadPositions() {
+      const [catRes, posRes] = await Promise.all([API.getCategories(), API.getPositions()]);
+      categories = catRes.data || [];
+      positions = posRes.data || [];
+      
+      // 渲染Tab
+      document.getElementById('position-tabs').innerHTML = categories.map(c => `
+        <div class="tab ${currentCategoryId == c.id || (!currentCategoryId && c.id == categories[0]?.id) ? 'active' : ''}" 
+             onclick="switchPositionTab(${c.id}, this)">${c.name}</div>
+      `).join('');
+      
+      const activeTab = currentCategoryId || categories[0]?.id;
+      renderPositions(activeTab);
+      
+      // 填充岗位选择器
+      document.getElementById('position-category').innerHTML = categories.map(c => 
+        `<option value="${c.id}">${c.name}</option>`
+      ).join('');
+    }
+
+    function switchPositionTab(categoryId, el) {
+      document.querySelectorAll('#position-tabs .tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+      currentCategoryId = categoryId;
+      renderPositions(categoryId);
+    }
+
+    function renderPositions(categoryId) {
+      const filtered = positions.filter(p => p.category_id == categoryId);
+      document.getElementById('positions-table').querySelector('tbody').innerHTML = filtered.map(p => `
+        <tr>
+          <td>${p.sequence || '-'}</td>
+          <td>${p.name}</td>
+          <td><a href="#" onclick="goToQuestions(${p.id})" style="color: #1890ff;">管理题库</a></td>
+          <td><a href="#" onclick="showDimensionModal(${p.id}, '${p.name}')" style="color: #1890ff;">配置评分</a></td>
+          <td>
+            <button class="btn btn-default btn-sm" onclick="editPosition(${p.id})">编辑</button>
+            <button class="btn btn-danger btn-sm" onclick="deletePosition(${p.id})">删除</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" class="empty">暂无岗位，点击上方按钮添加</td></tr>';
+    }
+
+    function showPositionModal(id) {
+      editingPosition = id ? positions.find(p => p.id === id) : null;
+      document.getElementById('position-modal-overlay').style.display = 'block';
+      document.getElementById('position-modal').style.display = 'block';
+      document.getElementById('position-modal-title').textContent = id ? '编辑岗位' : '新增岗位';
+      
+      if (editingPosition) {
+        document.getElementById('position-id').value = id;
+        document.getElementById('position-category').value = editingPosition.category_id;
+        document.getElementById('position-sequence').value = editingPosition.sequence || '';
+        document.getElementById('position-name').value = editingPosition.name;
+      } else {
+        document.getElementById('position-id').value = '';
+        document.getElementById('position-category').value = currentCategoryId || categories[0]?.id;
+        document.getElementById('position-sequence').value = '';
+        document.getElementById('position-name').value = '';
+      }
+    }
+
+    function closePositionModal() {
+      document.getElementById('position-modal-overlay').style.display = 'none';
+      document.getElementById('position-modal').style.display = 'none';
+      editingPosition = null;
+    }
+
+    async function savePosition() {
+      const id = document.getElementById('position-id').value;
+      const categoryId = parseInt(document.getElementById('position-category').value);
+      const sequence = document.getElementById('position-sequence').value.trim();
+      const name = document.getElementById('position-name').value.trim();
+      
+      if (!name) { alert('请输入岗位名称'); return; }
+      
+      if (id) {
+        const { error } = await API.updatePosition(parseInt(id), sequence, name);
+        if (error) alert('更新失败: ' + error.message);
+        else { closePositionModal(); loadPositions(); }
+      } else {
+        const { error } = await API.createPosition(categoryId, sequence, name);
+        if (error) alert('创建失败: ' + error.message);
+        else { closePositionModal(); loadPositions(); }
+      }
+    }
+
+    async function editPosition(id) {
+      showPositionModal(id);
+    }
+
+    async function deletePosition(id) {
+      if (!confirm('确认删除？')) return;
+      const { error } = await API.deletePosition(id);
+      if (error) alert('删除失败: ' + error.message);
+      else loadPositions();
+    }
+
+    function goToQuestions(positionId) {
+      currentPositionId = positionId;
+      document.querySelector('[data-page="questions"]').click();
+      loadQuestions();
+    }
+
+    // ==================== 题库管理 ====================
+    async function loadQuestions() {
+      const [posRes, quesRes] = await Promise.all([API.getPositions(), API.getQuestions()]);
+      positions = posRes.data || [];
+      
+      const positionSelect = document.getElementById('question-position');
+      positionSelect.innerHTML = positions.map(p => 
+        `<option value="${p.id}">${p.recruitment_categories?.name || ''} - ${p.sequence || ''} ${p.name}</option>`
+      ).join('');
+      
+      if (currentPositionId) {
+        positionSelect.value = currentPositionId;
+      }
+      
+      const positionId = parseInt(positionSelect.value);
+      const filtered = quesRes.data?.filter(q => q.position_id === positionId) || [];
+      
+      document.getElementById('questions-table').querySelector('tbody').innerHTML = filtered.map(q => `
+        <tr>
+          <td>${q.id}</td>
+          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${q.question}</td>
+          <td><span class="tag tag-blue">${q.question_type === 'text' ? '文本' : q.question_type === 'choice' ? '选择' : '文件'}</span></td>
+          <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">${q.answer_template || '-'}</td>
+          <td>
+            <button class="btn btn-default btn-sm" onclick="editQuestion(${q.id})">编辑</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteQuestion(${q.id})">删除</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" class="empty">暂无题目</td></tr>';
+    }
+
+    function showQuestionModal(id) {
+      const positionId = parseInt(document.getElementById('question-position').value);
+      if (!positionId) { alert('请先选择岗位'); return; }
+      
+      document.getElementById('question-modal-overlay').style.display = 'block';
+      document.getElementById('question-modal').style.display = 'block';
+      document.getElementById('question-modal-title').textContent = id ? '编辑题目' : '新增题目';
+      
+      if (id) {
+        const q = window.currentQuestions?.find(x => x.id === id);
+        if (q) {
+          document.getElementById('question-id').value = id;
+          document.getElementById('question-content').value = q.question;
+          document.getElementById('question-type').value = q.question_type;
+          document.getElementById('question-template').value = q.answer_template || '';
+        }
+      } else {
+        document.getElementById('question-id').value = '';
+        document.getElementById('question-content').value = '';
+        document.getElementById('question-type').value = 'text';
+        document.getElementById('question-template').value = '';
+      }
+    }
+
+    function closeQuestionModal() {
+      document.getElementById('question-modal-overlay').style.display = 'none';
+      document.getElementById('question-modal').style.display = 'none';
+    }
+
+    async function editQuestion(id) {
+      const { data } = await API.getQuestions();
+      window.currentQuestions = data || [];
+      showQuestionModal(id);
+    }
+
+    async function saveQuestion() {
+      const id = document.getElementById('question-id').value;
+      const positionId = parseInt(document.getElementById('question-position').value);
+      const question = document.getElementById('question-content').value.trim();
+      const questionType = document.getElementById('question-type').value;
+      const answerTemplate = document.getElementById('question-template').value.trim();
+      
+      if (!question) { alert('请输入题目内容'); return; }
+      
+      if (id) {
+        const { error } = await API.updateQuestion(parseInt(id), question, questionType, answerTemplate);
+        if (error) alert('更新失败: ' + error.message);
+        else { closeQuestionModal(); loadQuestions(); }
+      } else {
+        const { error } = await API.createQuestion(positionId, question, questionType, answerTemplate);
+        if (error) alert('创建失败: ' + error.message);
+        else { closeQuestionModal(); loadQuestions(); }
+      }
+    }
+
+    async function deleteQuestion(id) {
+      if (!confirm('确认删除？')) return;
+      const { error } = await API.deleteQuestion(id);
+      if (error) alert('删除失败: ' + error.message);
+      else loadQuestions();
+    }
+
+    // ==================== 评分维度 ====================
+    async function showDimensionModal(positionId, positionName) {
+      document.getElementById('dimension-modal-overlay').style.display = 'block';
+      document.getElementById('dimension-modal').style.display = 'block';
+      document.getElementById('dimension-position-name').textContent = positionName;
+      document.getElementById('dimension-position-id').value = positionId;
+      
+      await loadDimensions(positionId);
+    }
+
+    async function loadDimensions(positionId) {
+      const { data, error } = await API.getDimensions(positionId);
+      const dims = data || [];
+      const totalWeight = dims.reduce((sum, d) => sum + (d.weight || 0), 0);
+      
+      document.getElementById('dimensions-list').innerHTML = `
+        <div style="margin-bottom: 16px; color: #666;">
+          总权重: <strong style="color: ${totalWeight === 100 ? '#52c41a' : '#ff4d4f'}">${totalWeight}%</strong>
+          ${totalWeight !== 100 ? '<span style="margin-left: 8px;">(建议总权重为100%)</span>' : ''}
+        </div>
+        ${dims.map(d => `
+          <div class="dimension-item">
+            <div class="dimension-name">${d.dimension_name}</div>
+            <div class="progress-bar"><div class="progress-fill" style="width: ${d.weight}%; background: ${d.weight >= 30 ? '#1890ff' : '#faad14'}"></div></div>
+            <span class="dimension-weight">${d.weight}%</span>
+            <button class="btn btn-default btn-sm" onclick="editDimension(${d.id}, '${d.dimension_name}', ${d.weight}, '${d.description || ''}')">编辑</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteDimension(${d.id}, ${positionId})">删除</button>
+          </div>
+        `).join('') || '<div class="empty">暂无评分维度</div>'}
+      `;
+    }
+
+    function editDimension(id, name, weight, desc) {
+      document.getElementById('dimension-id').value = id;
+      document.getElementById('dimension-name').value = name;
+      document.getElementById('dimension-weight').value = weight;
+      document.getElementById('dimension-desc').value = desc;
+    }
+
+    function closeDimensionModal() {
+      document.getElementById('dimension-modal-overlay').style.display = 'none';
+      document.getElementById('dimension-modal').style.display = 'none';
+    }
+
+    async function saveDimension() {
+      const id = document.getElementById('dimension-id').value;
+      const positionId = parseInt(document.getElementById('dimension-position-id').value);
+      const dimensionName = document.getElementById('dimension-name').value.trim();
+      const weight = parseInt(document.getElementById('dimension-weight').value) || 0;
+      const description = document.getElementById('dimension-desc').value.trim();
+      
+      if (!dimensionName) { alert('请输入维度名称'); return; }
+      
+      if (id) {
+        const { error } = await API.updateDimension(parseInt(id), dimensionName, weight, description);
+        if (error) alert('更新失败: ' + error.message);
+      } else {
+        const { error } = await API.createDimension(positionId, dimensionName, weight, description);
+        if (error) alert('创建失败: ' + error.message);
+      }
+      
+      document.getElementById('dimension-id').value = '';
+      document.getElementById('dimension-name').value = '';
+      document.getElementById('dimension-weight').value = '';
+      document.getElementById('dimension-desc').value = '';
+      
+      await loadDimensions(positionId);
+    }
+
+    async function deleteDimension(id, positionId) {
+      if (!confirm('确认删除？')) return;
+      const { error } = await API.deleteDimension(id);
+      if (error) alert('删除失败: ' + error.message);
+      else await loadDimensions(positionId);
+    }
+
+    // ==================== 面试邀请 ====================
+    async function loadInvites() {
+      const [posRes, invRes] = await Promise.all([API.getPositions(), API.getInvites()]);
+      positions = posRes.data || [];
+      const invites = invRes.data || [];
+      
+      const positionSelect = document.getElementById('invite-position');
+      positionSelect.innerHTML = positions.map(p => 
+        `<option value="${p.id}">${p.recruitment_categories?.name || ''} - ${p.sequence || ''} ${p.name}</option>`
+      ).join('');
+      
+      const BASE_URL = window.location.origin;
+      document.getElementById('invites-table').querySelector('tbody').innerHTML = invites.map(i => `
+        <tr>
+          <td>${i.id}</td>
+          <td>${i.candidate_name || '-'}</td>
+          <td>${i.positions?.sequence || ''} ${i.positions?.name || '-'}</td>
+          <td>
+            <div class="copy-group">
+              <input type="text" class="copy-input" value="${BASE_URL}/interview.html?link=${i.interview_link}" readonly>
+              <button class="copy-btn" onclick="copyLink(this, '${BASE_URL}/interview.html?link=${i.interview_link}')">复制</button>
+            </div>
+          </td>
+          <td><span class="tag ${i.status === 'completed' ? 'tag-green' : 'tag-orange'}">${i.status === 'completed' ? '已完成' : '待面试'}</span></td>
+          <td>${new Date(i.invited_at).toLocaleString('zh-CN')}</td>
+          <td>
+            <button class="btn btn-danger btn-sm" onclick="deleteInvite(${i.id})">删除</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="7" class="empty">暂无邀请记录</td></tr>';
+    }
+
+    function showInviteModal() {
+      document.getElementById('invite-modal-overlay').style.display = 'block';
+      document.getElementById('invite-modal').style.display = 'block';
+      document.getElementById('invite-name').value = '';
+      document.getElementById('invite-email').value = '';
+    }
+
+    function closeInviteModal() {
+      document.getElementById('invite-modal-overlay').style.display = 'none';
+      document.getElementById('invite-modal').style.display = 'none';
+    }
+
+    async function createInvite() {
+      const positionId = parseInt(document.getElementById('invite-position').value);
+      const candidateName = document.getElementById('invite-name').value.trim();
+      const candidateEmail = document.getElementById('invite-email').value.trim();
+      
+      const { data, error } = await API.createInvite(positionId, candidateName, candidateEmail);
+      if (error) alert('创建失败: ' + error.message);
+      else {
+        alert('创建成功！链接已复制到剪贴板');
+        const BASE_URL = window.location.origin;
+        copyToClipboard(BASE_URL + '/interview.html?link=' + data[0].interview_link);
+        closeInviteModal();
+        loadInvites();
+      }
+    }
+
+    async function deleteInvite(id) {
+      if (!confirm('确认删除？')) return;
+      const { error } = await API.deleteInvite(id);
+      if (error) alert('删除失败: ' + error.message);
+      else loadInvites();
+    }
+
+    function copyLink(btn, url) {
+      copyToClipboard(url);
+      btn.textContent = '已复制';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 2000);
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).catch(() => {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      });
+    }
+
+    // ==================== 候选人管理 ====================
+    async function loadCandidates() {
+      const { data, error } = await API.getCandidates();
+      const candidates = data || [];
+      
+      document.getElementById('candidates-table').querySelector('tbody').innerHTML = candidates.map(c => `
+        <tr>
+          <td>${c.id}</td>
+          <td>${c.name}</td>
+          <td>${c.email || '-'}</td>
+          <td>${c.phone || '-'}</td>
+          <td>${c.positions?.name || '-'}</td>
+          <td>${new Date(c.created_at).toLocaleString('zh-CN')}</td>
+          <td>
+            <button class="btn btn-default btn-sm" onclick="viewCandidate(${c.id})">查看详情</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="7" class="empty">暂无候选人</td></tr>';
+    }
+
+    async function viewCandidate(id) {
+      const { data, error } = await API.getCandidate(id);
+      if (error) { alert('获取详情失败'); return; }
+      
+      document.getElementById('candidate-name').textContent = data.name;
+      
+      let html = `
+        <p><strong>邮箱:</strong> ${data.email || '-'}</p>
+        <p><strong>电话:</strong> ${data.phone || '-'}</p>
+        <p><strong>应聘岗位:</strong> ${data.positions?.name || '-'}</p>
+        <hr style="margin: 16px 0;">
+        <h4>面试回答 (${data.answers?.length || 0})</h4>
+      `;
+      
+      if (data.answers && data.answers.length > 0) {
+        data.answers.forEach((a, i) => {
+          html += `
+            <div style="margin: 16px 0; padding: 16px; background: #f9f9f9; border-radius: 8px;">
+              <div style="margin-bottom: 8px;"><strong>Q${i+1}:</strong> ${a.question_banks?.question || '题目'}</div>
+              <div style="background: #fff; padding: 12px; border-radius: 4px; margin-bottom: 8px;">
+                <strong>回答:</strong> ${a.answer_text}
+              </div>
+              ${a.answer_template ? `<div style="font-size: 12px; color: #666; margin-bottom: 8px;"><strong>参考:</strong> ${a.answer_template}</div>` : ''}
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>评分:</span>
+                <select onchange="rateAnswer(${a.id}, this.value)">
+                  <option value="">未评分</option>
+                  ${[1,2,3,4,5].map(n => `<option value="${n}" ${a.rating_score == n ? 'selected' : ''}>${n}分</option>`).join('')}
+                </select>
+                ${a.rating_score ? `<span class="tag tag-green">${a.rating_score}分</span>` : ''}
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html += '<p style="color: #999;">暂无回答记录</p>';
+      }
+      
+      document.getElementById('candidate-detail').innerHTML = html;
+      document.getElementById('candidate-modal-overlay').style.display = 'block';
+      document.getElementById('candidate-modal').style.display = 'block';
+    }
+
+    function closeCandidateModal() {
+      document.getElementById('candidate-modal-overlay').style.display = 'none';
+      document.getElementById('candidate-modal').style.display = 'none';
+    }
+
+    async function rateAnswer(answerId, score) {
+      if (!score) return;
+      const { error } = await API.rateAnswer(answerId, parseInt(score), '');
+      if (error) alert('评分失败');
+    }
+  </script>
+</body>
+</html>
