@@ -746,30 +746,30 @@
         <div class="question-hint" id="q-hint">请用语音回答以下问题，系统将自动识别您说的内容</div>
       </div>
 
-      <!-- 语音识别区 -->
-      <div class="speech-area" id="speech-area">
+      <!-- 语音识别区（后台运行，候选人端不展示识别过程） -->
+      <div class="speech-area" id="speech-area" style="display:none">
         <div class="speech-placeholder" id="speech-placeholder">系统正在聆听您的回答...</div>
-        <div class="speech-text" id="speech-text" style="display:none"></div>
-        <div class="speech-listening" id="speech-listening" style="display:none">
+        <div class="speech-text" id="speech-text"></div>
+        <div class="speech-listening" id="speech-listening">
           <div class="mic-pulse"></div>
           正在聆听您的回答...
         </div>
       </div>
 
-      <!-- 自动语音识别状态 -->
+      <!-- 状态提示 -->
       <div class="speech-status" id="speech-status"></div>
 
-      <!-- 下一题 / 完成面试 按钮 -->
+      <!-- 下一题 / 完成面试 按钮（始终显示） -->
       <div class="action-buttons">
-        <button class="btn-next" id="btn-next" onclick="nextQuestion()" style="display:none">
+        <button class="btn-next" id="btn-next" onclick="nextQuestion()">
           下一题 →
         </button>
-        <button class="btn-finish" id="btn-finish" onclick="finishInterview()" style="display:none">
+        <button class="btn-finish" id="btn-finish" onclick="finishInterview()">
           完成面试 ✓
         </button>
       </div>
 
-      <!-- 实时转录（仅展示） -->
+      <!-- 实时转录（后台记录，候选人端不展示） -->
       <div class="transcript-panel" id="transcript-panel" style="display:none">
         <div style="font-weight:600; margin-bottom:8px; font-size:13px">📝 面试过程记录</div>
         <div id="transcript-list"></div>
@@ -923,11 +923,10 @@
           }
         }
         if (final) currentSpeechText += final;
-        const display = currentSpeechText + (interim ? `<span style="color:var(--text-muted)">${interim}</span>` : '');
-        document.getElementById('speech-text').innerHTML = display || '';
-        // 说话内容出现后自动显示下一题/完成按钮
+        // 后台静默识别，不显示识别文字到候选人端
+        // 有识别内容时更新状态提示
         if (currentSpeechText.trim() && !hasAnswered) {
-          updateActionButtons();
+          document.getElementById('speech-status').innerHTML = '🎤 正在聆听您的回答...（说完后请点击下方按钮）';
         }
       };
 
@@ -969,29 +968,23 @@
         autoRecognizing = true;
         currentSpeechText = '';
         hasAnswered = false;
-        document.getElementById('speech-placeholder').style.display = 'none';
-        document.getElementById('speech-text').style.display = 'block';
-        document.getElementById('speech-text').innerHTML = '';
-        document.getElementById('speech-listening').style.display = 'flex';
-        document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 正在聆听您的回答，请对着麦克风说话...';
-        document.getElementById('btn-next').style.display = 'none';
-        document.getElementById('btn-finish').style.display = 'none';
+        // 后台静默识别，不操作 speech-area 的显示
+        document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 请开始回答，系统正在聆听...';
+        // 按钮始终显示
+        updateActionButtons();
         try { recognition.start(); } catch(e) {}
-      }, 300); // 短暂延迟确保之前的识别已停止
+      }, 300);
     }
 
     // 停止自动识别
     function stopAutoRecognition() {
       autoRecognizing = false;
       isRecording = false;
-      document.getElementById('speech-listening').style.display = 'none';
       try { recognition.stop(); } catch(e) {}
     }
 
     function updateActionButtons() {
-      const hasContent = currentSpeechText.trim() || hasAnswered;
-      if (!hasContent) return;
-
+      // 按钮始终显示，不需要条件判断
       if (currentQIdx < questions.length - 1) {
         document.getElementById('btn-next').style.display = 'inline-flex';
         document.getElementById('btn-finish').style.display = 'none';
@@ -1066,19 +1059,13 @@
       const q = questions[currentQIdx];
       currentSpeechText = '';
       hasAnswered = false;
-      document.getElementById('speech-text').innerHTML = '';
-      document.getElementById('speech-text').style.display = 'none';
-      document.getElementById('speech-placeholder').style.display = 'block';
-      document.getElementById('speech-placeholder').textContent = '面试官正在提问，请稍候...';
-      document.getElementById('speech-listening').style.display = 'none';
-      document.getElementById('btn-next').style.display = 'none';
-      document.getElementById('btn-finish').style.display = 'none';
-      document.getElementById('speech-status').textContent = '';
+      // 状态提示：面试官正在提问
+      document.getElementById('speech-status').innerHTML = '🎤 面试官正在提问...';
 
       // 更新进度
       document.getElementById('q-progress-text').textContent = `问题 ${currentQIdx + 1} / ${questions.length}`;
       document.getElementById('q-text').textContent = q.question;
-      document.getElementById('q-hint').textContent = q.answer_template ? `参考要点：${q.answer_template}` : '请用语音回答以下问题，系统将自动识别您说的内容';
+      document.getElementById('q-hint').textContent = q.answer_template ? `参考要点：${q.answer_template}` : '请用语音回答以下问题，系统将自动识别';
 
       // 进度点
       const dotsHtml = questions.map((_, i) => {
@@ -1089,15 +1076,14 @@
       }).join('');
       document.getElementById('progress-dots').innerHTML = dotsHtml;
 
+      // 按钮始终显示
+      updateActionButtons();
+
       // 如果已有答案（回看）
       if (answers[q.id]) {
         currentSpeechText = answers[q.id];
         hasAnswered = true;
-        document.getElementById('speech-text').style.display = 'block';
-        document.getElementById('speech-text').textContent = answers[q.id];
-        document.getElementById('speech-placeholder').style.display = 'none';
-        document.getElementById('speech-status').innerHTML = '✅ 已回答，可直接点击下一题或重新回答';
-        updateActionButtons();
+        document.getElementById('speech-status').innerHTML = '✅ 已回答，可直接点击下一题';
       }
 
       // 面试官语音提问（TTS播完后会自动启动语音识别）
@@ -1123,14 +1109,16 @@
       // 如果说了话但还没保存，自动保存
       if (!hasAnswered && currentSpeechText.trim()) {
         saveCurrentAnswer(currentSpeechText.trim());
+        document.getElementById('speech-status').innerHTML = '✅ 回答已记录';
       }
       // 检查是否有回答
       const q = questions[currentQIdx];
       if (!answers[q.id]) {
-        alert('请先回答当前问题再进入下一题');
-        // 重新启动识别
-        startAutoRecognition();
-        return;
+        if (!confirm('未检测到语音回答，确定跳过此题吗？')) {
+          // 不跳过，重新启动识别
+          startAutoRecognition();
+          return;
+        }
       }
       currentQIdx++;
       renderQuestion();
