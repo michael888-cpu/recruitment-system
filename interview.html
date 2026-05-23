@@ -878,6 +878,22 @@
       // 初始化语音识别
       initSpeechRecognition();
 
+      // 关键：在用户点击事件上下文中先启动一次语音识别
+      // Chrome 要求 recognition.start() 必须在用户交互（click/tap）中调用
+      // 之后即使从 TTS onend 回调中调用也可以
+      if (recognition) {
+        try {
+          console.log('[语音识别] 在用户交互上下文中预激活识别');
+          recognition.start();
+          // 立即停止，只是为了建立权限和交互上下文
+          setTimeout(() => {
+            try { recognition.stop(); } catch(e) {}
+          }, 300);
+        } catch(e) {
+          console.warn('[语音识别] 预激活失败:', e);
+        }
+      }
+
       // 渲染第一题
       renderQuestion();
     }
@@ -900,17 +916,24 @@
     }
 
     // ========== 语音识别（Web Speech API - 自动模式） ==========
+    let ttsTimeout = null; // TTS onend 超时保护
+
     function initSpeechRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        console.warn('浏览器不支持语音识别，请使用Chrome');
+        console.warn('[语音识别] 浏览器不支持，请使用Chrome');
         document.getElementById('speech-status').innerHTML = '⚠️ 您的浏览器不支持语音识别，请使用Chrome浏览器';
         return;
       }
+      console.log('[语音识别] 初始化 SpeechRecognition');
       recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'zh-CN';
+
+      recognition.onstart = () => {
+        console.log('[语音识别] 识别已启动');
+      };
 
       recognition.onresult = (event) => {
         let final = '';
@@ -922,33 +945,43 @@
             interim += event.results[i][0].transcript;
           }
         }
-        if (final) currentSpeechText += final;
-        // 后台静默识别，不显示识别文字到候选人端
+        if (final) {
+          currentSpeechText += final;
+          console.log('[语音识别] 识别到最终文字:', final, '累计:', currentSpeechText);
+        }
+        if (interim) {
+          console.log('[语音识别] 临时识别:', interim);
+        }
         // 有识别内容时更新状态提示
         if (currentSpeechText.trim() && !hasAnswered) {
-          document.getElementById('speech-status').innerHTML = '🎤 正在聆听您的回答...（说完后请点击下方按钮）';
+          document.getElementById('speech-status').innerHTML = '🎤 正在聆听...';
         }
       };
 
       recognition.onerror = (e) => {
-        console.warn('语音识别错误:', e.error);
+        console.warn('[语音识别] 错误:', e.error, 'autoRecognizing:', autoRecognizing);
         if (e.error === 'no-speech') {
-          // 没检测到语音，继续监听
+          // 没检测到语音，自动重启继续监听
           if (autoRecognizing) {
-            try { recognition.start(); } catch(e) {}
+            console.log('[语音识别] no-speech，2秒后重启');
+            setTimeout(() => { try { recognition.start(); } catch(e) {} }, 2000);
           }
+        } else if (e.error === 'not-allowed') {
+          console.error('[语音识别] 麦克风权限被拒绝！');
+          document.getElementById('speech-status').innerHTML = '⚠️ 麦克风权限被拒绝，请在浏览器地址栏左侧点击允许麦克风';
         } else if (e.error !== 'aborted') {
-          // 其他错误，尝试重启
           if (autoRecognizing) {
-            try { recognition.start(); } catch(e) {}
+            console.log('[语音识别] 错误后3秒重启');
+            setTimeout(() => { try { recognition.start(); } catch(e) {} }, 3000);
           }
         }
       };
 
       recognition.onend = () => {
-        // 自动模式下，如果还在识别状态，自动重启
+        console.log('[语音识别] 识别结束, autoRecognizing:', autoRecognizing);
+        // 自动模式下，自动重启
         if (autoRecognizing) {
-          try { recognition.start(); } catch(e) {}
+          setTimeout(() => { try { recognition.start(); } catch(e) {} }, 500);
         }
       };
     }
@@ -956,6 +989,7 @@
     // 自动开始语音识别（每道题TTS播完后调用）
     function startAutoRecognition() {
       if (!recognition) {
+        console.warn('[语音识别] recognition对象不存在，无法启动');
         document.getElementById('speech-status').innerHTML = '⚠️ 您的浏览器不支持语音识别，请使用Chrome浏览器';
         return;
       }
@@ -968,16 +1002,21 @@
         autoRecognizing = true;
         currentSpeechText = '';
         hasAnswered = false;
-        // 后台静默识别，不操作 speech-area 的显示
-        document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 请开始回答，系统正在聆听...';
-        // 按钮始终显示
+        console.log('[语音识别] 启动自动识别模式');
+        document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 请开始回答...';
         updateActionButtons();
-        try { recognition.start(); } catch(e) {}
-      }, 300);
+        try {
+          recognition.start();
+          console.log('[语音识别] recognition.start() 已调用');
+        } catch(e) {
+          console.error('[语音识别] recognition.start() 失败:', e);
+        }
+      }, 500);
     }
 
     // 停止自动识别
     function stopAutoRecognition() {
+      console.log('[语音识别] 停止识别');
       autoRecognizing = false;
       isRecording = false;
       try { recognition.stop(); } catch(e) {}
@@ -1016,6 +1055,9 @@
       if (!speechSynth) return;
       speechSynth.cancel();
 
+      // 清除之前的超时保护
+      if (ttsTimeout) { clearTimeout(ttsTimeout); ttsTimeout = null; }
+
       // 先停止当前的语音识别（避免TTS声音被识别）
       stopAutoRecognition();
 
@@ -1030,19 +1072,33 @@
       const zhVoice = voices.find(v => v.lang.startsWith('zh'));
       if (zhVoice) utterance.voice = zhVoice;
 
-      utterance.onend = () => {
+      let recognitionStarted = false;
+      const triggerRecognition = () => {
+        if (recognitionStarted) return; // 防止重复触发
+        recognitionStarted = true;
+        if (ttsTimeout) { clearTimeout(ttsTimeout); ttsTimeout = null; }
         document.getElementById('wave-anim').style.display = 'none';
-        // TTS播报结束后，自动启动语音识别
+        console.log('[TTS] 播报结束，启动语音识别');
         startAutoRecognition();
       };
 
+      utterance.onend = triggerRecognition;
       utterance.onerror = () => {
-        document.getElementById('wave-anim').style.display = 'none';
-        // 出错也启动识别
-        startAutoRecognition();
+        console.warn('[TTS] 播报出错，仍然启动识别');
+        triggerRecognition();
       };
 
       speechSynth.speak(utterance);
+
+      // 超时保护：如果 TTS onend 在 15 秒内不触发，强制启动识别
+      // 这处理 Chrome 的已知 bug：长文本 TTS onend 不触发
+      const estimatedDuration = Math.max(text.length * 0.3, 8) * 1000; // 按文字长度估算
+      ttsTimeout = setTimeout(() => {
+        console.warn('[TTS] onend 超时未触发（' + (estimatedDuration/1000) + 's），强制启动识别');
+        // 先尝试取消卡住的 TTS
+        speechSynth.cancel();
+        triggerRecognition();
+      }, estimatedDuration);
 
       // 添加到转录
       transcript.push({
@@ -1065,7 +1121,7 @@
       // 更新进度
       document.getElementById('q-progress-text').textContent = `问题 ${currentQIdx + 1} / ${questions.length}`;
       document.getElementById('q-text').textContent = q.question;
-      document.getElementById('q-hint').textContent = q.answer_template ? `参考要点：${q.answer_template}` : '请用语音回答以下问题，系统将自动识别';
+      document.getElementById('q-hint').textContent = '请用语音回答以下问题';
 
       // 进度点
       const dotsHtml = questions.map((_, i) => {

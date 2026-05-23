@@ -725,21 +725,60 @@ async function deleteInvite(id) {
 
 // ========== 候选人管理 ==========
 async function loadCandidates() {
-  const { data } = await API.getCandidates();
-  const candidates = data || [];
+  const [candRes, invRes] = await Promise.all([API.getCandidates(), API.getInvites()]);
+  const candidates = candRes.data || [];
+  const invites = invRes.data || [];
+
+  // 构建 invite_link -> invite 的映射
+  const inviteMap = {};
+  invites.forEach(inv => {
+    if (inv.interview_link) {
+      inviteMap[inv.interview_link] = inv;
+    }
+  });
 
   document.getElementById('candidates-table').querySelector('tbody').innerHTML = candidates.map(c => {
-    // 查找候选人对应的邀请状态
-    const inviteStatus = c.invite_link ? '已面试' : '未面试';
+    // 通过 interview_records 关联判断面试状态
+    const records = c.interview_records || [];
+    const hasCompletedRecord = records.some(r => r.status === 'completed');
+    const hasInProgressRecord = records.some(r => r.status === 'in_progress');
+
+    let inviteStatus, tagClass;
+    if (hasCompletedRecord) {
+      inviteStatus = '已完成';
+      tagClass = 'tag-green';
+    } else if (hasInProgressRecord) {
+      inviteStatus = '进行中';
+      tagClass = 'tag-blue';
+    } else if (c.invite_link) {
+      // 有邀请链接但还没面试记录，检查邀请状态
+      const inv = inviteMap[c.invite_link];
+      if (inv && inv.status === 'in_progress') {
+        inviteStatus = '进行中';
+        tagClass = 'tag-blue';
+      } else {
+        inviteStatus = '待面试';
+        tagClass = 'tag-orange';
+      }
+    } else {
+      inviteStatus = '未邀请';
+      tagClass = 'tag-orange';
+    }
+
+    // 面试时长（取最近一条记录）
+    const latestRecord = records[0];
+    const duration = latestRecord ? Math.floor((latestRecord.duration_seconds || 0) / 60) + '分' + (latestRecord.duration_seconds || 0) % 60 + '秒' : '-';
+
     return `
     <tr>
       <td>${c.id}</td><td>${c.name}</td><td>${c.email||'-'}</td>
       <td>${c.phone||'-'}</td><td>${c.positions?.name||'-'}</td>
-      <td><span class="tag tag-blue">${inviteStatus}</span></td>
+      <td><span class="tag ${tagClass}">${inviteStatus}</span></td>
+      <td>${duration}</td>
       <td>${new Date(c.created_at).toLocaleString('zh-CN')}</td>
       <td><button class="btn btn-p btn-xs" onclick="viewCandidate(${c.id})">查看详情</button></td>
     </tr>
-  `}).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--t3);padding:40px">暂无候选人</td></tr>';
+  `}).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--t3);padding:40px">暂无候选人</td></tr>';
 }
 
 async function viewCandidate(id) {

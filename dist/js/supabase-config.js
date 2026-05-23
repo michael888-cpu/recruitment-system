@@ -218,7 +218,7 @@ const API = {
   async getCandidates() {
     const { data, error } = await supabaseClient
       .from('candidates')
-      .select('*, positions(name)')
+      .select('*, positions(name), interview_records(id, status, duration_seconds, question_count, created_at)')
       .order('created_at', { ascending: false });
     return { data, error };
   },
