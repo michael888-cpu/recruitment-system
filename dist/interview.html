@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI视频面试 - 候选人端</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
   <script src="js/supabase-config.js"></script>
   <style>
     :root {
@@ -803,13 +804,22 @@
     let startTime = null;
     let isRecording = false;
     let mediaStream = null;
-    let recognition = null;
+    let recognition = null; // 保留变量名兼容，实际不再使用
     let currentSpeechText = '';
     let cameraOn = false;
     let speechSynth = window.speechSynthesis;
     let hasAnswered = false;
     let isFinishing = false;
     let autoRecognizing = false; // 标记是否在自动识别模式
+
+    // ========== 讯飞语音听写相关变量 ==========
+    let xfIatWebSocket = null;     // WebSocket 连接
+    let xfAudioContext = null;     // AudioContext 用于录音
+    let xfMediaStreamSource = null;
+    let xfScriptProcessor = null;  // ScriptProcessorNode 用于音频处理
+    let xfRecognitionActive = false; // 讯飞识别是否活跃
+    let xfResultText = '';         // 当前识别结果
+    let xfRestartTimer = null;     // 60秒自动重启定时器
 
     const urlParams = new URLSearchParams(window.location.search);
     const interviewLink = urlParams.get('link');
@@ -875,24 +885,8 @@
       startTime = Date.now();
       timerInterval = setInterval(updateTimer, 1000);
 
-      // 初始化语音识别
+      // 初始化语音识别（讯飞WebSocket，无需预激活）
       initSpeechRecognition();
-
-      // 关键：在用户点击事件上下文中先启动一次语音识别
-      // Chrome 要求 recognition.start() 必须在用户交互（click/tap）中调用
-      // 之后即使从 TTS onend 回调中调用也可以
-      if (recognition) {
-        try {
-          console.log('[语音识别] 在用户交互上下文中预激活识别');
-          recognition.start();
-          // 立即停止，只是为了建立权限和交互上下文
-          setTimeout(() => {
-            try { recognition.stop(); } catch(e) {}
-          }, 300);
-        } catch(e) {
-          console.warn('[语音识别] 预激活失败:', e);
-        }
-      }
 
       // 渲染第一题
       renderQuestion();
@@ -915,103 +909,229 @@
       }
     }
 
-    // ========== 语音识别（Web Speech API - 自动模式） ==========
+    // ========== 语音识别（讯飞语音听写 WebSocket API） ==========
     let ttsTimeout = null; // TTS onend 超时保护
 
+    // 讯飞配置
+    const XF_APPID = 'ae1420df';
+    const XF_API_SECRET = 'Y2ZlMTM1MzdkMmNhN2M3OWNhNmU0NjA3';
+    const XF_API_KEY = '807f66c6a6d0b5d6d314d9593f0ac459';
+    const XF_IAT_URL = 'wss://iat-api.xfyun.cn/v2/iat';
+
     function initSpeechRecognition() {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        console.warn('[语音识别] 浏览器不支持，请使用Chrome');
-        document.getElementById('speech-status').innerHTML = '⚠️ 您的浏览器不支持语音识别，请使用Chrome浏览器';
+      // 讯飞模式无需初始化 recognition 对象，在 startAutoRecognition 时按需连接
+      console.log('[语音识别] 讯飞语音听写模式，无需预初始化');
+    }
+
+    // 生成讯飞鉴权URL
+    function getXfAuthUrl() {
+      const url = new URL(XF_IAT_URL);
+      const host = url.host;
+      const path = url.pathname;
+      const now = new Date().toUTCString();
+      const signatureOrigin = `host: ${host}\ndate: ${now}\nGET ${path} HTTP/1.1`;
+      const signature = CryptoJS.HmacSHA256(signatureOrigin, XF_API_SECRET);
+      const authorization = `api_key="${XF_API_KEY}", algorithm="hmac-sha256", headers="host date request-line", signature="${CryptoJS.enc.Base64.stringify(signature)}"`;
+      return `${XF_IAT_URL}?authorization=${encodeURIComponent(btoa(authorization))}&date=${encodeURIComponent(now)}&host=${encodeURIComponent(host)}`;
+    }
+
+    // 启动讯飞语音听写
+    function startAutoRecognition() {
+      // 先停止之前的识别
+      stopAutoRecognition();
+
+      isRecording = true;
+      autoRecognizing = true;
+      currentSpeechText = '';
+      hasAnswered = false;
+      xfResultText = '';
+      xfRecognitionActive = true;
+
+      console.log('[语音识别] 启动讯飞语音听写');
+      document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 请开始回答...';
+      updateActionButtons();
+
+      // 连接讯飞WebSocket
+      connectXfIat();
+    }
+
+    // 连接讯飞WebSocket
+    function connectXfIat() {
+      if (!xfRecognitionActive) return;
+
+      try {
+        const authUrl = getXfAuthUrl();
+        console.log('[语音识别] 正在连接讯飞服务器...');
+        xfIatWebSocket = new WebSocket(authUrl);
+      } catch(e) {
+        console.error('[语音识别] WebSocket创建失败:', e);
+        document.getElementById('speech-status').innerHTML = '⚠️ 语音识别连接失败，请刷新重试';
         return;
       }
-      console.log('[语音识别] 初始化 SpeechRecognition');
-      recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'zh-CN';
 
-      recognition.onstart = () => {
-        console.log('[语音识别] 识别已启动');
+      xfIatWebSocket.onopen = () => {
+        console.log('[语音识别] 讯飞WebSocket已连接');
+        // 开启麦克风并开始发送音频
+        startXfRecording();
+        // 55秒后自动重启（讯飞限制60秒）
+        xfRestartTimer = setTimeout(() => {
+          console.log('[语音识别] 达到55秒，自动重启会话');
+          restartXfIat();
+        }, 55000);
       };
 
-      recognition.onresult = (event) => {
-        let final = '';
-        let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
+      xfIatWebSocket.onmessage = (event) => {
+        try {
+          const res = JSON.parse(event.data);
+          if (res.code !== 0) {
+            console.error('[语音识别] 讯飞返回错误:', res.code, res.message);
+            return;
           }
-        }
-        if (final) {
-          currentSpeechText += final;
-          console.log('[语音识别] 识别到最终文字:', final, '累计:', currentSpeechText);
-        }
-        if (interim) {
-          console.log('[语音识别] 临时识别:', interim);
-        }
-        // 有识别内容时更新状态提示
-        if (currentSpeechText.trim() && !hasAnswered) {
-          document.getElementById('speech-status').innerHTML = '🎤 正在聆听...';
-        }
-      };
-
-      recognition.onerror = (e) => {
-        console.warn('[语音识别] 错误:', e.error, 'autoRecognizing:', autoRecognizing);
-        if (e.error === 'no-speech') {
-          // 没检测到语音，自动重启继续监听
-          if (autoRecognizing) {
-            console.log('[语音识别] no-speech，2秒后重启');
-            setTimeout(() => { try { recognition.start(); } catch(e) {} }, 2000);
+          const data = res.data;
+          if (data && data.result) {
+            const result = data.result;
+            const ws = result.ws;
+            if (ws) {
+              let text = '';
+              ws.forEach(w => {
+                w.cw.forEach(c => { text += c.w; });
+              });
+              if (result.ls === 'true') {
+                // 最终结果
+                xfResultText += text;
+                currentSpeechText = xfResultText;
+                console.log('[语音识别] 识别到文字:', text, '累计:', currentSpeechText);
+              }
+            }
+            if (currentSpeechText.trim() && !hasAnswered) {
+              document.getElementById('speech-status').innerHTML = '🎤 正在聆听...';
+            }
           }
-        } else if (e.error === 'not-allowed') {
-          console.error('[语音识别] 麦克风权限被拒绝！');
-          document.getElementById('speech-status').innerHTML = '⚠️ 麦克风权限被拒绝，请在浏览器地址栏左侧点击允许麦克风';
-        } else if (e.error !== 'aborted') {
-          if (autoRecognizing) {
-            console.log('[语音识别] 错误后3秒重启');
-            setTimeout(() => { try { recognition.start(); } catch(e) {} }, 3000);
+          if (data && data.status === 2) {
+            console.log('[语音识别] 讯飞会话结束(服务端)');
           }
+        } catch(e) {
+          console.error('[语音识别] 解析讯飞消息失败:', e);
         }
       };
 
-      recognition.onend = () => {
-        console.log('[语音识别] 识别结束, autoRecognizing:', autoRecognizing);
-        // 自动模式下，自动重启
-        if (autoRecognizing) {
-          setTimeout(() => { try { recognition.start(); } catch(e) {} }, 500);
+      xfIatWebSocket.onerror = (e) => {
+        console.error('[语音识别] WebSocket错误');
+        if (xfRecognitionActive) {
+          document.getElementById('speech-status').innerHTML = '⚠️ 语音识别连接异常，正在重试...';
+          setTimeout(() => { if (xfRecognitionActive) connectXfIat(); }, 3000);
+        }
+      };
+
+      xfIatWebSocket.onclose = (event) => {
+        console.log('[语音识别] WebSocket关闭, code:', event.code, 'reason:', event.reason);
+        if (xfRecognitionActive && event.code !== 1000) {
+          // 非正常关闭，自动重连
+          setTimeout(() => { if (xfRecognitionActive) connectXfIat(); }, 2000);
         }
       };
     }
 
-    // 自动开始语音识别（每道题TTS播完后调用）
-    function startAutoRecognition() {
-      if (!recognition) {
-        console.warn('[语音识别] recognition对象不存在，无法启动');
-        document.getElementById('speech-status').innerHTML = '⚠️ 您的浏览器不支持语音识别，请使用Chrome浏览器';
-        return;
-      }
-      // 先停止之前的识别
-      autoRecognizing = false;
-      try { recognition.stop(); } catch(e) {}
-
-      setTimeout(() => {
-        isRecording = true;
-        autoRecognizing = true;
-        currentSpeechText = '';
-        hasAnswered = false;
-        console.log('[语音识别] 启动自动识别模式');
-        document.getElementById('speech-status').innerHTML = '<div class="recording-dot"></div> 请开始回答...';
-        updateActionButtons();
-        try {
-          recognition.start();
-          console.log('[语音识别] recognition.start() 已调用');
-        } catch(e) {
-          console.error('[语音识别] recognition.start() 失败:', e);
+    // 启动录音并发送音频到讯飞
+    async function startXfRecording() {
+      try {
+        // 复用已有的 mediaStream（摄像头已开启），如果没有则新建
+        let stream = mediaStream;
+        if (!stream) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
-      }, 500);
+
+        xfAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        xfMediaStreamSource = xfAudioContext.createMediaStreamSource(stream);
+        xfScriptProcessor = xfAudioContext.createScriptProcessor(4096, 1, 1);
+
+        xfScriptProcessor.onaudioprocess = (e) => {
+          if (!xfRecognitionActive || !xfIatWebSocket || xfIatWebSocket.readyState !== WebSocket.OPEN) return;
+          const pcmData = e.inputBuffer.getChannelData(0);
+          const pcm16 = float32ToInt16(pcmData);
+          const base64Data = arrayBufferToBase64(pcm16.buffer);
+          const params = {
+            data: { status: 1, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
+          };
+          try {
+            xfIatWebSocket.send(JSON.stringify(params));
+          } catch(e) {}
+        };
+
+        xfMediaStreamSource.connect(xfScriptProcessor);
+        xfScriptProcessor.connect(xfAudioContext.destination);
+        console.log('[语音识别] 录音已启动，开始发送音频');
+      } catch(e) {
+        console.error('[语音识别] 录音启动失败:', e);
+        document.getElementById('speech-status').innerHTML = '⚠️ 麦克风权限被拒绝，请允许麦克风访问';
+      }
+    }
+
+    // Float32 → Int16 转换
+    function float32ToInt16(float32Array) {
+      const int16 = new Int16Array(float32Array.length);
+      for (let i = 0; i < float32Array.length; i++) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16;
+    }
+
+    // ArrayBuffer → Base64
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    // 55秒自动重启（保持识别连续）
+    function restartXfIat() {
+      console.log('[语音识别] 重启讯飞会话（保持识别连续）');
+      // 保存当前结果
+      currentSpeechText = xfResultText;
+      // 关闭当前WebSocket
+      closeXfIatWebSocket();
+      // 停止录音处理器
+      stopXfRecording();
+      // 重新连接
+      if (xfRecognitionActive) {
+        setTimeout(() => {
+          connectXfIat();
+        }, 300);
+      }
+    }
+
+    // 关闭WebSocket
+    function closeXfIatWebSocket() {
+      if (xfIatWebSocket) {
+        // 发送结束帧
+        try {
+          if (xfIatWebSocket.readyState === WebSocket.OPEN) {
+            xfIatWebSocket.send(JSON.stringify({ data: { status: 2 } }));
+          }
+        } catch(e) {}
+        try { xfIatWebSocket.close(1000); } catch(e) {}
+        xfIatWebSocket = null;
+      }
+    }
+
+    // 停止录音
+    function stopXfRecording() {
+      if (xfScriptProcessor) {
+        xfScriptProcessor.disconnect();
+        xfScriptProcessor = null;
+      }
+      if (xfMediaStreamSource) {
+        xfMediaStreamSource.disconnect();
+        xfMediaStreamSource = null;
+      }
+      if (xfAudioContext && xfAudioContext.state !== 'closed') {
+        try { xfAudioContext.close(); } catch(e) {}
+        xfAudioContext = null;
+      }
     }
 
     // 停止自动识别
@@ -1019,7 +1139,16 @@
       console.log('[语音识别] 停止识别');
       autoRecognizing = false;
       isRecording = false;
-      try { recognition.stop(); } catch(e) {}
+      xfRecognitionActive = false;
+
+      // 清除重启定时器
+      if (xfRestartTimer) { clearTimeout(xfRestartTimer); xfRestartTimer = null; }
+
+      // 保存当前识别结果
+      if (xfResultText) { currentSpeechText = xfResultText; }
+
+      closeXfIatWebSocket();
+      stopXfRecording();
     }
 
     function updateActionButtons() {
