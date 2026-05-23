@@ -980,6 +980,9 @@
         }, 55000);
       };
 
+      // 保存动态修正的中间结果
+      let xfIntermediateText = '';
+
       xfIatWebSocket.onmessage = (event) => {
         try {
           const res = JSON.parse(event.data);
@@ -996,11 +999,34 @@
               ws.forEach(w => {
                 w.cw.forEach(c => { text += c.w; });
               });
+
+              // 处理动态修正 (dwa=wpgs)
+              if (result.pgs === 'apd') {
+                // 追加模式：将中间结果添加
+                xfIntermediateText += text;
+              } else if (result.pgs === 'rpl') {
+                // 替换模式：替换最后一段中间结果
+                const rg = result.rg; // [起始词序号, 结束词序号]
+                if (rg) {
+                  // 简化处理：用 xfResultText + text 重建
+                  // 保留 rg[0] 之前的内容，替换 rg[0] 之后的内容
+                  const wsList = xfResultText + xfIntermediateText;
+                  // 对于替换，直接更新中间文本
+                  xfIntermediateText = text; // 简化：直接用新文本替换中间部分
+                } else {
+                  xfIntermediateText = text;
+                }
+              }
+
               if (result.ls === 'true') {
-                // 最终结果
+                // 句子最终结果
                 xfResultText += text;
+                xfIntermediateText = '';
                 currentSpeechText = xfResultText;
                 console.log('[语音识别] 识别到文字:', text, '累计:', currentSpeechText);
+              } else {
+                // 中间结果，用于实时显示
+                currentSpeechText = xfResultText + xfIntermediateText;
               }
             }
             if (currentSpeechText.trim() && !hasAnswered) {
@@ -1025,8 +1051,9 @@
 
       xfIatWebSocket.onclose = (event) => {
         console.log('[语音识别] WebSocket关闭, code:', event.code, 'reason:', event.reason);
-        if (xfRecognitionActive && event.code !== 1000) {
-          // 非正常关闭，自动重连
+        // 讯飞超时关闭(code=1000)但识别仍在进行时也需要重连
+        if (xfRecognitionActive) {
+          stopXfRecording(); // 先清理录音资源
           setTimeout(() => { if (xfRecognitionActive) connectXfIat(); }, 2000);
         }
       };
@@ -1045,14 +1072,37 @@
         xfMediaStreamSource = xfAudioContext.createMediaStreamSource(stream);
         xfScriptProcessor = xfAudioContext.createScriptProcessor(4096, 1, 1);
 
+        // 讯飞协议：第一帧必须带业务参数 status=0，之后 status=1，结束 status=2
+        let isFirstFrame = true;
+
         xfScriptProcessor.onaudioprocess = (e) => {
           if (!xfRecognitionActive || !xfIatWebSocket || xfIatWebSocket.readyState !== WebSocket.OPEN) return;
           const pcmData = e.inputBuffer.getChannelData(0);
           const pcm16 = float32ToInt16(pcmData);
           const base64Data = arrayBufferToBase64(pcm16.buffer);
-          const params = {
-            data: { status: 1, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
-          };
+
+          let params;
+          if (isFirstFrame) {
+            // 首帧：带业务参数
+            params = {
+              common: { app_id: XF_APPID },
+              business: {
+                language: 'zh_cn',
+                domain: 'iat',
+                accent: 'mandarin',
+                dwa: 'wpgs', // 动态修正
+                vad_eos: 2000
+              },
+              data: { status: 0, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
+            };
+            isFirstFrame = false;
+            console.log('[语音识别] 发送首帧（含业务参数）');
+          } else {
+            // 中间帧：只发音频
+            params = {
+              data: { status: 1, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
+            };
+          }
           try {
             xfIatWebSocket.send(JSON.stringify(params));
           } catch(e) {}
