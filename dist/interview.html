@@ -892,10 +892,18 @@
       renderQuestion();
     }
 
-    // ========== 摄像头 ==========
+    // ========== 摄像头 + 视频录制 ==========
+    let videoRecorder = null;        // MediaRecorder 实例
+    let videoChunks = [];            // 录制的数据片段
+    let videoRecording = false;      // 是否正在录制
+
     async function openCamera() {
       try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        // 请求720p摄像头 + 麦克风
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: true
+        });
         const video = document.getElementById('cam-video');
         video.srcObject = mediaStream;
         video.style.display = 'block';
@@ -903,10 +911,75 @@
         document.getElementById('cam-label').textContent = '我的摄像头 · 已开启';
         cameraOn = true;
         document.getElementById('rec-dot').style.display = 'block';
+
+        // 开始录制视频
+        startVideoRecording();
       } catch (e) {
         console.warn('摄像头无法开启:', e);
         document.getElementById('cam-label').textContent = '摄像头未开启';
       }
+    }
+
+    // 开始录制视频
+    function startVideoRecording() {
+      if (!mediaStream) return;
+      try {
+        // 优先使用 webm 格式，兼容性好
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+          ? 'video/webm;codecs=vp8,opus'
+          : MediaRecorder.isTypeSupported('video/webm')
+            ? 'video/webm'
+            : 'video/mp4';
+
+        videoRecorder = new MediaRecorder(mediaStream, {
+          mimeType: mimeType,
+          videoBitsPerSecond: 1500000  // 1.5Mbps，720p约50-100MB/小时
+        });
+        videoChunks = [];
+
+        videoRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            videoChunks.push(e.data);
+          }
+        };
+
+        videoRecorder.onstop = () => {
+          console.log('[视频录制] 录制停止，共', videoChunks.length, '个片段');
+        };
+
+        // 每5秒产生一个数据片段
+        videoRecorder.start(5000);
+        videoRecording = true;
+        console.log('[视频录制] 开始录制，格式:', mimeType);
+      } catch(e) {
+        console.error('[视频录制] 启动失败:', e);
+        videoRecorder = null;
+      }
+    }
+
+    // 停止录制并返回视频Blob
+    function stopVideoRecording() {
+      return new Promise((resolve) => {
+        if (!videoRecorder || videoRecorder.state === 'inactive') {
+          videoRecording = false;
+          resolve(null);
+          return;
+        }
+
+        videoRecorder.onstop = () => {
+          videoRecording = false;
+          if (videoChunks.length === 0) {
+            console.warn('[视频录制] 没有录制到数据');
+            resolve(null);
+            return;
+          }
+          const blob = new Blob(videoChunks, { type: videoRecorder.mimeType });
+          console.log('[视频录制] 视频生成完成，大小:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
+          resolve(blob);
+        };
+
+        videoRecorder.stop();
+      });
     }
 
     // ========== 语音识别（讯飞语音听写 WebSocket API） ==========
@@ -1030,7 +1103,7 @@
               }
             }
             if (currentSpeechText.trim() && !hasAnswered) {
-              document.getElementById('speech-status').innerHTML = '🎤 正在聆听...';
+              // 不向候选人展示识别内容，仅后台记录
             }
           }
           if (data && data.status === 2) {
@@ -1069,11 +1142,33 @@
         }
 
         xfAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        console.log('[语音识别] AudioContext 实际采样率:', xfAudioContext.sampleRate);
         xfMediaStreamSource = xfAudioContext.createMediaStreamSource(stream);
-        xfScriptProcessor = xfAudioContext.createScriptProcessor(4096, 1, 1);
+        // 使用较小的 bufferSize (2048) 以减少延迟
+        xfScriptProcessor = xfAudioContext.createScriptProcessor(2048, 1, 1);
 
-        // 讯飞协议：第一帧必须带业务参数 status=0，之后 status=1，结束 status=2
-        let isFirstFrame = true;
+        // 讯飞协议：
+        // 第一帧 status=0 只带业务参数，不发音频
+        // 第二帧 status=1 开始发音频
+        // 最后一帧 status=2 结束
+        let frameCount = 0;
+
+        // 先发送首帧（只有业务参数，无音频）
+        if (xfIatWebSocket && xfIatWebSocket.readyState === WebSocket.OPEN) {
+          const firstFrame = {
+            common: { app_id: XF_APPID },
+            business: {
+              language: 'zh_cn',
+              domain: 'iat',
+              accent: 'mandarin',
+              dwa: 'wpgs',
+              vad_eos: 3000
+            },
+            data: { status: 0, format: 'audio-16k-16bit-1', encoding: 'raw', audio: '' }
+          };
+          xfIatWebSocket.send(JSON.stringify(firstFrame));
+          console.log('[语音识别] 发送首帧（仅业务参数）');
+        }
 
         xfScriptProcessor.onaudioprocess = (e) => {
           if (!xfRecognitionActive || !xfIatWebSocket || xfIatWebSocket.readyState !== WebSocket.OPEN) return;
@@ -1081,31 +1176,18 @@
           const pcm16 = float32ToInt16(pcmData);
           const base64Data = arrayBufferToBase64(pcm16.buffer);
 
-          let params;
-          if (isFirstFrame) {
-            // 首帧：带业务参数
-            params = {
-              common: { app_id: XF_APPID },
-              business: {
-                language: 'zh_cn',
-                domain: 'iat',
-                accent: 'mandarin',
-                dwa: 'wpgs', // 动态修正
-                vad_eos: 2000
-              },
-              data: { status: 0, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
-            };
-            isFirstFrame = false;
-            console.log('[语音识别] 发送首帧（含业务参数）');
-          } else {
-            // 中间帧：只发音频
-            params = {
-              data: { status: 1, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
-            };
-          }
+          const params = {
+            data: { status: 1, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
+          };
           try {
             xfIatWebSocket.send(JSON.stringify(params));
-          } catch(e) {}
+            frameCount++;
+            if (frameCount % 50 === 0) {
+              console.log('[语音识别] 已发送音频帧数:', frameCount, '数据大小:', base64Data.length, 'bytes');
+            }
+          } catch(e) {
+            console.error('[语音识别] 发送音频帧失败:', e);
+          }
         };
 
         xfMediaStreamSource.connect(xfScriptProcessor);
@@ -1344,7 +1426,7 @@
       // 如果说了话但还没保存，自动保存
       if (!hasAnswered && currentSpeechText.trim()) {
         saveCurrentAnswer(currentSpeechText.trim());
-        document.getElementById('speech-status').innerHTML = '✅ 回答已记录';
+        // 不向候选人展示识别结果
       }
       // 检查是否有回答
       const q = questions[currentQIdx];
@@ -1359,21 +1441,10 @@
       renderQuestion();
     }
 
-    // ========== 转录记录 ==========
+    // ========== 转录记录（仅后台保存，不向候选人展示） ==========
     function renderTranscript() {
-      const panel = document.getElementById('transcript-panel');
-      const list = document.getElementById('transcript-list');
-      if (transcript.length === 0) { panel.style.display = 'none'; return; }
-      panel.style.display = 'block';
-      list.innerHTML = transcript.map(t => `
-        <div class="transcript-item">
-          <span class="transcript-role ${t.role === 'interviewer' ? 'role-interviewer' : 'role-candidate'}">
-            ${t.role === 'interviewer' ? '面试官' : '我'}
-          </span>
-          <div class="transcript-content">${t.content}</div>
-        </div>
-      `).join('');
-      list.scrollTop = list.scrollHeight;
+      // 不在候选人端渲染转录面板，仅保存数据
+      // transcript-panel 始终隐藏
     }
 
     // ========== 计时器 ==========
@@ -1383,6 +1454,50 @@
       const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
       const s = String(elapsed % 60).padStart(2, '0');
       document.getElementById('timer').textContent = `${m}:${s}`;
+    }
+
+    // ========== 清理旧视频（保持总空间不超过 maxMB MB） ==========
+    async function cleanupOldVideos(maxMB) {
+      try {
+        const { data: files, error } = await API.listInterviewVideos();
+        if (error || !files || files.length === 0) return;
+
+        // 计算总空间
+        let totalSize = 0;
+        const fileInfos = files
+          .filter(f => f.name.endsWith('.webm') || f.name.endsWith('.mp4'))
+          .map(f => {
+            totalSize += f.metadata?.size || 0;
+            return { name: f.name, size: f.metadata?.size || 0, created: f.created_at };
+          })
+          .sort((a, b) => new Date(a.created) - new Date(b.created)); // 按时间升序（最旧在前）
+
+        const totalMB = totalSize / (1024 * 1024);
+        console.log('[视频清理] 当前总空间:', totalMB.toFixed(2), 'MB, 文件数:', fileInfos.length);
+
+        // 如果超过阈值，从最旧的开始删除
+        if (totalMB > maxMB) {
+          const toDelete = [];
+          let currentSize = totalSize;
+
+          for (const f of fileInfos) {
+            if (currentSize <= maxMB * 1024 * 1024 * 0.8) break; // 清到80%就停
+            toDelete.push(f.name);
+            currentSize -= f.size;
+          }
+
+          if (toDelete.length > 0) {
+            console.log('[视频清理] 删除', toDelete.length, '个旧视频，释放空间');
+            await API.deleteInterviewVideo(toDelete[0]); // 逐个删除（Supabase限制）
+            for (let i = 1; i < toDelete.length; i++) {
+              await API.deleteInterviewVideo(toDelete[i]);
+            }
+            console.log('[视频清理] 清理完成');
+          }
+        }
+      } catch(e) {
+        console.error('[视频清理] 清理失败:', e);
+      }
     }
 
     // ========== 完成面试 ==========
@@ -1414,6 +1529,14 @@
       // 显示处理中状态
       document.getElementById('speech-status').innerHTML = '⏳ 正在保存面试数据...';
 
+      // ====== 停止视频录制并上传 ======
+      let videoBlob = null;
+      try {
+        videoBlob = await stopVideoRecording();
+      } catch(e) {
+        console.error('[视频录制] 停止录制失败:', e);
+      }
+
       // 保存所有答案到数据库
       for (const q of questions) {
         if (answers[q.id]) {
@@ -1433,6 +1556,39 @@
         questionCount: questions.length,
         status: 'completed'
       });
+
+      // ====== 上传视频到 Supabase Storage ======
+      if (videoBlob) {
+        document.getElementById('speech-status').innerHTML = '⏳ 正在上传面试视频...';
+        try {
+          // 先清理旧视频（保持总空间不超过800MB）
+          await cleanupOldVideos(800);
+
+          const now = new Date();
+          const timestamp = now.toISOString().replace(/[:.]/g, '-').substring(0, 19);
+          const fileName = `video_${candidateId}_${timestamp}.webm`;
+
+          const { data: uploadData, error: uploadError } = await API.uploadInterviewVideo(
+            candidateId, videoBlob, fileName
+          );
+
+          if (uploadError) {
+            console.error('[视频上传] 上传失败:', uploadError);
+          } else {
+            console.log('[视频上传] 上传成功:', fileName);
+
+            // 获取视频公开URL并保存到面试记录
+            const videoUrl = API.getInterviewVideoUrl(fileName);
+            // 更新面试记录，添加视频URL
+            await supabaseClient
+              .from('interview_records')
+              .update({ video_url: videoUrl })
+              .eq('candidate_id', candidateId);
+          }
+        } catch(e) {
+          console.error('[视频上传] 上传异常:', e);
+        }
+      }
 
       // 更新邀请状态为已完成
       if (interview.id) {

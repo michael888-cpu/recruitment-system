@@ -89,6 +89,7 @@ CREATE TABLE interview_records (
   candidate_id BIGINT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
   position_id BIGINT REFERENCES positions(id) ON DELETE SET NULL,
   transcript TEXT,
+  video_url TEXT,
   duration_seconds INTEGER DEFAULT 0,
   question_count INTEGER DEFAULT 0,
   status TEXT DEFAULT 'in_progress' CHECK(status IN ('in_progress', 'completed', 'abandoned')),
@@ -115,3 +116,14 @@ CREATE POLICY "Allow all" ON candidates FOR ALL USING (true);
 CREATE POLICY "Allow all" ON interview_answers FOR ALL USING (true);
 CREATE POLICY "Allow all" ON interview_records FOR ALL USING (true);
 CREATE POLICY "Allow all" ON position_questions FOR ALL USING (true);
+
+-- 9. 添加 video_url 字段到 interview_records（如果不存在）
+-- ALTER TABLE interview_records ADD COLUMN IF NOT EXISTS video_url TEXT;
+
+-- 10. Supabase Storage: interview-videos bucket
+-- 需要在 Supabase Dashboard → Storage 中手动创建 bucket "interview-videos"
+-- 并设置 bucket 为 public（允许公开读取视频URL）
+-- Storage Policy: 允许所有人上传和读取
+-- CREATE POLICY "Allow public upload" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'interview-videos');
+-- CREATE POLICY "Allow public read" ON storage.objects FOR SELECT USING (bucket_id = 'interview-videos');
+-- CREATE POLICY "Allow public delete" ON storage.objects FOR DELETE USING (bucket_id = 'interview-videos');

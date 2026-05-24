@@ -326,6 +326,49 @@ const API = {
       .update({ status })
       .eq('id', id);
     return { error };
+  },
+
+  // ========== 视频存储（Supabase Storage） ==========
+  async uploadInterviewVideo(candidateId, videoBlob, fileName) {
+    const { data, error } = await supabaseClient.storage
+      .from('interview-videos')
+      .upload(fileName, videoBlob, {
+        contentType: videoBlob.type || 'video/webm',
+        upsert: false
+      });
+    return { data, error };
+  },
+
+  async getInterviewVideoUrl(fileName) {
+    const { data } = supabaseClient.storage
+      .from('interview-videos')
+      .getPublicUrl(fileName);
+    return data.publicUrl;
+  },
+
+  async listInterviewVideos() {
+    const { data, error } = await supabaseClient.storage
+      .from('interview-videos')
+      .list('', {
+        sortBy: { column: 'created_at', order: 'asc' }
+      });
+    return { data, error };
+  },
+
+  async deleteInterviewVideo(fileName) {
+    const { error } = await supabaseClient.storage
+      .from('interview-videos')
+      .remove([fileName]);
+    return { error };
+  },
+
+  async getInterviewVideoFileInfo(fileName) {
+    const { data, error } = await supabaseClient.storage
+      .from('interview-videos')
+      .list('', {
+        search: fileName
+      });
+    return { data, error };
   }
 };
 
