@@ -6,7 +6,7 @@
   <title>AI视频面试 - 候选人端</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
-  <script src="js/supabase-config.js"></script>
+  <script src="js/supabase-config.js?v=20260524"></script>
   <style>
     :root {
       --primary: #6366f1;
@@ -1059,6 +1059,15 @@
       xfIatWebSocket.onmessage = (event) => {
         try {
           const res = JSON.parse(event.data);
+          // 调试日志：打印所有收到的消息（前5条详细，之后简略）
+          if (!xfIatWebSocket._msgCount) xfIatWebSocket._msgCount = 0;
+          xfIatWebSocket._msgCount++;
+          if (xfIatWebSocket._msgCount <= 5) {
+            console.log('[语音识别] 收到消息 #' + xfIatWebSocket._msgCount + ':', JSON.stringify(res).substring(0, 500));
+          } else if (xfIatWebSocket._msgCount % 20 === 0) {
+            console.log('[语音识别] 已收到消息数:', xfIatWebSocket._msgCount);
+          }
+
           if (res.code !== 0) {
             console.error('[语音识别] 讯飞返回错误:', res.code, res.message);
             return;
@@ -1081,13 +1090,15 @@
                 // 替换模式：替换最后一段中间结果
                 const rg = result.rg; // [起始词序号, 结束词序号]
                 if (rg) {
-                  // 简化处理：用 xfResultText + text 重建
                   // 保留 rg[0] 之前的内容，替换 rg[0] 之后的内容
-                  const wsList = xfResultText + xfIntermediateText;
-                  // 对于替换，直接更新中间文本
                   xfIntermediateText = text; // 简化：直接用新文本替换中间部分
                 } else {
                   xfIntermediateText = text;
+                }
+              } else {
+                // 无 pgs 标记时（非动态修正模式），直接追加
+                if (result.ls !== 'true') {
+                  xfIntermediateText += text;
                 }
               }
 
@@ -1100,14 +1111,19 @@
               } else {
                 // 中间结果，用于实时显示
                 currentSpeechText = xfResultText + xfIntermediateText;
+                console.log('[语音识别] 中间结果:', text, '当前:', currentSpeechText);
               }
             }
             if (currentSpeechText.trim() && !hasAnswered) {
               // 不向候选人展示识别内容，仅后台记录
             }
-          }
-          if (data && data.status === 2) {
-            console.log('[语音识别] 讯飞会话结束(服务端)');
+          } else if (data) {
+            // data 存在但没有 result
+            if (data.status === 2) {
+              console.log('[语音识别] 讯飞会话结束(服务端)');
+            } else {
+              console.log('[语音识别] 收到无result消息, data.status:', data.status);
+            }
           }
         } catch(e) {
           console.error('[语音识别] 解析讯飞消息失败:', e);
@@ -1144,31 +1160,17 @@
         xfAudioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         console.log('[语音识别] AudioContext 实际采样率:', xfAudioContext.sampleRate);
         xfMediaStreamSource = xfAudioContext.createMediaStreamSource(stream);
-        // 使用较小的 bufferSize (2048) 以减少延迟
+        // bufferSize=1280: 16000Hz * 16bit * 1ch * 40ms = 1280 bytes → 640 samples
+        // ScriptProcessor 需要 2 的幂，用 2048，然后手动按 1280 字节拆分
         xfScriptProcessor = xfAudioContext.createScriptProcessor(2048, 1, 1);
 
         // 讯飞协议：
-        // 第一帧 status=0 只带业务参数，不发音频
-        // 第二帧 status=1 开始发音频
-        // 最后一帧 status=2 结束
+        // 第一帧 status=0 必须包含 common + business + data（含音频）
+        // 中间帧 status=1 只含 data（含音频）
+        // 最后一帧 status=2 结束标记
         let frameCount = 0;
-
-        // 先发送首帧（只有业务参数，无音频）
-        if (xfIatWebSocket && xfIatWebSocket.readyState === WebSocket.OPEN) {
-          const firstFrame = {
-            common: { app_id: XF_APPID },
-            business: {
-              language: 'zh_cn',
-              domain: 'iat',
-              accent: 'mandarin',
-              dwa: 'wpgs',
-              vad_eos: 3000
-            },
-            data: { status: 0, format: 'audio-16k-16bit-1', encoding: 'raw', audio: '' }
-          };
-          xfIatWebSocket.send(JSON.stringify(firstFrame));
-          console.log('[语音识别] 发送首帧（仅业务参数）');
-        }
+        let isFirstFrame = true;
+        let audioBuffer = []; // 缓存音频数据，首帧需要等第一次 onaudioprocess 一起发
 
         xfScriptProcessor.onaudioprocess = (e) => {
           if (!xfRecognitionActive || !xfIatWebSocket || xfIatWebSocket.readyState !== WebSocket.OPEN) return;
@@ -1176,11 +1178,30 @@
           const pcm16 = float32ToInt16(pcmData);
           const base64Data = arrayBufferToBase64(pcm16.buffer);
 
-          const params = {
-            data: { status: 1, format: 'audio-16k-16bit-1', encoding: 'raw', audio: base64Data }
-          };
           try {
-            xfIatWebSocket.send(JSON.stringify(params));
+            if (isFirstFrame) {
+              // 第一帧：必须包含 common、business、data，且 data.status=0，携带音频
+              const firstFrame = {
+                common: { app_id: XF_APPID },
+                business: {
+                  language: 'zh_cn',
+                  domain: 'iat',
+                  accent: 'mandarin',
+                  dwa: 'wpgs',
+                  eos: 3000
+                },
+                data: { status: 0, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64Data }
+              };
+              xfIatWebSocket.send(JSON.stringify(firstFrame));
+              isFirstFrame = false;
+              console.log('[语音识别] 发送首帧（含业务参数+音频），音频大小:', base64Data.length);
+            } else {
+              // 中间帧：只含 data，status=1
+              const params = {
+                data: { status: 1, format: 'audio/L16;rate=16000', encoding: 'raw', audio: base64Data }
+              };
+              xfIatWebSocket.send(JSON.stringify(params));
+            }
             frameCount++;
             if (frameCount % 50 === 0) {
               console.log('[语音识别] 已发送音频帧数:', frameCount, '数据大小:', base64Data.length, 'bytes');
@@ -1192,7 +1213,7 @@
 
         xfMediaStreamSource.connect(xfScriptProcessor);
         xfScriptProcessor.connect(xfAudioContext.destination);
-        console.log('[语音识别] 录音已启动，开始发送音频');
+        console.log('[语音识别] 录音已启动，等待首帧音频...');
       } catch(e) {
         console.error('[语音识别] 录音启动失败:', e);
         document.getElementById('speech-status').innerHTML = '⚠️ 麦克风权限被拒绝，请允许麦克风访问';
